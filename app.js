@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Cambio Bidireccional de Estado (Pendiente <-> Reembolsado) Sin Reversión Asíncrona
+ * Sincronización Ininterrumpida Bidireccional y Asignación de Aprobador
  * ==============================================================================
  */
 
@@ -178,7 +178,7 @@ function setTheme(theme) {
 }
 
 /* ==========================================
-   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN EN TIEMPO REAL
+   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN EN TIEMPO REAL ANTI-REVERSIÓN
    ========================================== */
 function startAutoSync() {
   if (autoSyncInterval) clearInterval(autoSyncInterval);
@@ -205,17 +205,22 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
 
         const mergedMap = new Map();
 
-        // Cargar primero datos actuales locales
+        // 1. Mantener datos locales en mapa
         currentList.forEach(item => {
           if (item && item.id) mergedMap.set(item.id, item);
         });
 
-        // Actualizar con datos remotos
+        // 2. Fusión con datos remotos de Google Sheets
         remoteList.forEach(item => {
           if (item && item.id) {
             const existing = mergedMap.get(item.id);
             if (existing) {
-              // Conservar comprobante local si la URL aún se está procesando
+              // Si el estado local se cambió recientemente (hace menos de 15s), mantener la elección del usuario
+              if (existing._localStatusChanged && (Date.now() - existing._localStatusChanged < 15000)) {
+                item.estado = existing.estado;
+                item.validadoPor = existing.validadoPor;
+                item._localStatusChanged = existing._localStatusChanged;
+              }
               if (existing.sustentoBase64 && !item.sustentoUrl) {
                 item.sustentoBase64 = existing.sustentoBase64;
               }
@@ -594,7 +599,7 @@ function formatCurrency(num) {
 }
 
 /* ==========================================
-   7. CREACIÓN Y COMPRESIÓN DE FOTOS
+   7. CREACIÓN Y FORMULARIO DE SOLICITUD
    ========================================== */
 function openModalSolicitud(data = null) {
   const modal = document.getElementById('modalSolicitud');
@@ -612,6 +617,7 @@ function openModalSolicitud(data = null) {
     document.getElementById('formCategoria').value = data.categoria;
     document.getElementById('formMonto').value = data.monto;
     document.getElementById('formDetalle').value = data.detalle;
+    document.getElementById('formValidadoPor').value = data.validadoPor || '';
     document.getElementById('formSustentoUrl').value = data.sustentoUrl || '';
     document.getElementById('formSustentoNombre').value = data.sustentoNombre || '';
 
@@ -623,7 +629,7 @@ function openModalSolicitud(data = null) {
     const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
     const isOwner = (itemSolicitanteClean === currentEmailClean) && (currentEmailClean !== '');
 
-    ['formFecha', 'formCategoria', 'formMonto', 'formDetalle'].forEach(fieldId => {
+    ['formFecha', 'formCategoria', 'formMonto', 'formDetalle', 'formValidadoPor'].forEach(fieldId => {
       document.getElementById(fieldId).disabled = !isOwner;
     });
 
@@ -632,8 +638,9 @@ function openModalSolicitud(data = null) {
     document.getElementById('formId').value = '';
     document.getElementById('formFecha').value = new Date().toISOString().split('T')[0];
     document.getElementById('formSolicitante').value = state.currentUserEmail;
+    document.getElementById('formValidadoPor').value = '';
 
-    ['formFecha', 'formCategoria', 'formMonto', 'formDetalle'].forEach(fieldId => {
+    ['formFecha', 'formCategoria', 'formMonto', 'formDetalle', 'formValidadoPor'].forEach(fieldId => {
       document.getElementById(fieldId).disabled = false;
     });
   }
@@ -757,7 +764,6 @@ function handleSaveSolicitud(e) {
 
   const existingItem = state.solicitudes.find(s => s.id === recordId);
   const estadoPrevio = existingItem ? existingItem.estado : 'Pendiente';
-  const validadoPorPrevio = existingItem ? existingItem.validadoPor : '';
 
   const newRecord = {
     id: recordId,
@@ -766,11 +772,11 @@ function handleSaveSolicitud(e) {
     categoria: document.getElementById('formCategoria').value,
     monto: parseFloat(document.getElementById('formMonto').value) || 0.00,
     detalle: document.getElementById('formDetalle').value,
+    validadoPor: document.getElementById('formValidadoPor').value || '',
     sustentoUrl: document.getElementById('formSustentoUrl').value || sustentoBase64 || '',
     sustentoNombre: sustentoNombre,
     sustentoBase64: sustentoBase64,
-    estado: estadoPrevio,
-    validadoPor: validadoPorPrevio
+    estado: estadoPrevio
   };
 
   const existingIndex = state.solicitudes.findIndex(s => s.id === recordId);
@@ -800,12 +806,12 @@ function handleSaveSolicitud(e) {
     mode: 'no-cors',
     body: JSON.stringify({ action: 'saveSolicitud', data: formData })
   }).then(() => {
-    setTimeout(() => fetchSolicitudesFromAPI(false), 4000);
+    setTimeout(() => fetchSolicitudesFromAPI(false), 3000);
   }).catch(() => {});
 }
 
 /* ==========================================
-   8. MODAL DE VALIDACIÓN BIDIRECCIONAL (PENDIENTE <-> REEMBOLSADO)
+   8. MODAL DE VALIDACIÓN BIDIRECCIONAL 100% PERSISTENTE
    ========================================== */
 function openModalAprobacion(id) {
   const item = state.solicitudes.find(s => s.id === id);
@@ -827,21 +833,15 @@ function confirmarAprobacion() {
   if (!state.selectedAprobacionId) return;
 
   const nuevoEstado = document.getElementById('aprobacionNuevoEstado').value;
-  let validadoPor = (document.getElementById('aprobacionValidadoPor').value || '').trim();
-
-  // Si regresa a Pendiente y no especificó otro nombre, limpia o actualiza la celda
-  if (nuevoEstado === 'Pendiente' && validadoPor === '') {
-    validadoPor = '';
-  } else if (nuevoEstado === 'Reembolsado' && validadoPor === '') {
-    validadoPor = 'Jefatura ACRES';
-  }
+  const validadoPor = (document.getElementById('aprobacionValidadoPor').value || '').trim();
 
   const itemIndex = state.solicitudes.findIndex(s => s.id === state.selectedAprobacionId);
   if (itemIndex >= 0) {
     state.solicitudes[itemIndex].estado = nuevoEstado;
     state.solicitudes[itemIndex].validadoPor = validadoPor;
+    // Marcar marca de tiempo local de cambio reciente para bloquear reversiones durante auto-sync
+    state.solicitudes[itemIndex]._localStatusChanged = Date.now();
     
-    // Guardar inmediatamente en caché local
     localStorage.setItem('acres_cached_solicitudes', JSON.stringify(state.solicitudes));
     updateKPIs();
     applyFilters();
@@ -850,7 +850,7 @@ function confirmarAprobacion() {
   closeModalAprobacion();
   showToast(`Estado actualizado a: ${nuevoEstado}`, 'success');
 
-  // Enviar cambio a Google Sheets
+  // Enviar a Google Sheets
   fetch(API_URL, {
     method: 'POST',
     mode: 'no-cors',
@@ -861,8 +861,7 @@ function confirmarAprobacion() {
       validadoPor: validadoPor
     })
   }).then(() => {
-    // Dar 4 segundos para que Google Sheets aplique el cambio antes de refrescar
-    setTimeout(() => fetchSolicitudesFromAPI(false), 4000);
+    setTimeout(() => fetchSolicitudesFromAPI(false), 3000);
   }).catch(() => {});
 }
 
