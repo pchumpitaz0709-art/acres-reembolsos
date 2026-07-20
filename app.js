@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Autenticación 100% Google OAuth 2.0 con Validación Pública por Botón Verde
+ * Cambio Bidireccional de Estado (Pendiente <-> Reembolsado) Sin Reversión Asíncrona
  * ==============================================================================
  */
 
@@ -178,7 +178,7 @@ function setTheme(theme) {
 }
 
 /* ==========================================
-   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN EN TIEMPO REAL SIN PARPADEOS
+   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN EN TIEMPO REAL
    ========================================== */
 function startAutoSync() {
   if (autoSyncInterval) clearInterval(autoSyncInterval);
@@ -205,15 +205,20 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
 
         const mergedMap = new Map();
 
+        // Cargar primero datos actuales locales
         currentList.forEach(item => {
           if (item && item.id) mergedMap.set(item.id, item);
         });
 
+        // Actualizar con datos remotos
         remoteList.forEach(item => {
           if (item && item.id) {
             const existing = mergedMap.get(item.id);
-            if (existing && existing.sustentoBase64 && !item.sustentoUrl) {
-              item.sustentoBase64 = existing.sustentoBase64;
+            if (existing) {
+              // Conservar comprobante local si la URL aún se está procesando
+              if (existing.sustentoBase64 && !item.sustentoUrl) {
+                item.sustentoBase64 = existing.sustentoBase64;
+              }
             }
             mergedMap.set(item.id, item);
           }
@@ -396,7 +401,7 @@ function renderDataView(items) {
                 <i data-lucide="trash-2" class="w-4 h-4"></i>
               </button>
             ` : ''}
-            <button onclick="openModalAprobacion('${item.id}')" title="Aprobar / Validar Reembolso" class="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-200 transition-all flex items-center gap-1">
+            <button onclick="openModalAprobacion('${item.id}')" title="Aprobar / Cambiar Estado del Reembolso" class="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-200 transition-all flex items-center gap-1">
               <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
               <span>Validar</span>
             </button>
@@ -589,7 +594,7 @@ function formatCurrency(num) {
 }
 
 /* ==========================================
-   7. CREACIÓN LIMPIA Y MODAL DE VALIDACIÓN POR BOTÓN VERDE
+   7. CREACIÓN Y COMPRESIÓN DE FOTOS
    ========================================== */
 function openModalSolicitud(data = null) {
   const modal = document.getElementById('modalSolicitud');
@@ -750,7 +755,6 @@ function handleSaveSolicitud(e) {
 
   const sustentoBase64 = state.selectedFileObject ? state.selectedFileObject.base64Data : '';
 
-  // Conserva el estado y validación previos si se está editando
   const existingItem = state.solicitudes.find(s => s.id === recordId);
   const estadoPrevio = existingItem ? existingItem.estado : 'Pendiente';
   const validadoPorPrevio = existingItem ? existingItem.validadoPor : '';
@@ -801,7 +805,7 @@ function handleSaveSolicitud(e) {
 }
 
 /* ==========================================
-   8. MODAL DE VALIDACIÓN (PÚBLICO Y DIRECTO DESDE BOTÓN VERDE VALIDAR)
+   8. MODAL DE VALIDACIÓN BIDIRECCIONAL (PENDIENTE <-> REEMBOLSADO)
    ========================================== */
 function openModalAprobacion(id) {
   const item = state.solicitudes.find(s => s.id === id);
@@ -823,20 +827,30 @@ function confirmarAprobacion() {
   if (!state.selectedAprobacionId) return;
 
   const nuevoEstado = document.getElementById('aprobacionNuevoEstado').value;
-  const validadoPor = document.getElementById('aprobacionValidadoPor').value || 'Jefatura';
+  let validadoPor = (document.getElementById('aprobacionValidadoPor').value || '').trim();
+
+  // Si regresa a Pendiente y no especificó otro nombre, limpia o actualiza la celda
+  if (nuevoEstado === 'Pendiente' && validadoPor === '') {
+    validadoPor = '';
+  } else if (nuevoEstado === 'Reembolsado' && validadoPor === '') {
+    validadoPor = 'Jefatura ACRES';
+  }
 
   const itemIndex = state.solicitudes.findIndex(s => s.id === state.selectedAprobacionId);
   if (itemIndex >= 0) {
     state.solicitudes[itemIndex].estado = nuevoEstado;
     state.solicitudes[itemIndex].validadoPor = validadoPor;
+    
+    // Guardar inmediatamente en caché local
     localStorage.setItem('acres_cached_solicitudes', JSON.stringify(state.solicitudes));
     updateKPIs();
     applyFilters();
   }
 
   closeModalAprobacion();
-  showToast('Validación y estado actualizados.', 'success');
+  showToast(`Estado actualizado a: ${nuevoEstado}`, 'success');
 
+  // Enviar cambio a Google Sheets
   fetch(API_URL, {
     method: 'POST',
     mode: 'no-cors',
@@ -847,7 +861,8 @@ function confirmarAprobacion() {
       validadoPor: validadoPor
     })
   }).then(() => {
-    setTimeout(() => fetchSolicitudesFromAPI(false), 2000);
+    // Dar 4 segundos para que Google Sheets aplique el cambio antes de refrescar
+    setTimeout(() => fetchSolicitudesFromAPI(false), 4000);
   }).catch(() => {});
 }
 
