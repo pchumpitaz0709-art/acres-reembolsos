@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Visor Modal Integrado 100% Directo para Google Drive, Fotos y PDF
+ * Renderizado Móvil Responsive Completo e Integración Total
  * ==============================================================================
  */
 
@@ -335,11 +335,12 @@ function updateKPIs() {
 }
 
 /* ==========================================
-   VISTA DE TABLA CON ACCIONES Y BOTÓN VERDE DE VALIDACIÓN
+   5. VISTA RENDERIZADA RESPONSIVE (TABLA DESKTOP Y TARJETAS MÓVIL NATIVAS)
    ========================================== */
 function renderDataView(items) {
+  const desktopTableContainer = document.getElementById('desktopTableView');
   const desktopTbody = document.getElementById('desktopTableBody');
-  const mobileCards = document.getElementById('mobileCardView');
+  const mobileCardContainer = document.getElementById('mobileCardView');
   const emptyState = document.getElementById('emptyState');
   const recordsCounter = document.getElementById('recordsCounterDisplay');
 
@@ -347,7 +348,7 @@ function renderDataView(items) {
 
   if (items.length === 0) {
     desktopTbody.innerHTML = '';
-    mobileCards.innerHTML = '';
+    mobileCardContainer.innerHTML = '';
     emptyState.classList.remove('hidden');
     return;
   }
@@ -356,6 +357,7 @@ function renderDataView(items) {
 
   const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
 
+  // RENDER DESKTOP TABLE
   desktopTbody.innerHTML = items.map(item => {
     const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
     const isOwner = (itemSolicitanteClean === currentEmailClean) && (currentEmailClean !== '');
@@ -414,7 +416,8 @@ function renderDataView(items) {
     `;
   }).join('');
 
-  mobileCards.innerHTML = items.map(item => {
+  // RENDER MOBILE CARDS NATIVAS EN CELULARES Y TABLETS
+  mobileCardContainer.innerHTML = items.map(item => {
     const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
     const isOwner = (itemSolicitanteClean === currentEmailClean) && (currentEmailClean !== '');
     const isReembolsado = item.estado === 'Reembolsado';
@@ -435,30 +438,35 @@ function renderDataView(items) {
           <span class="text-base font-bold text-slate-900 dark:text-white font-mono flex-shrink-0">${formatCurrency(item.monto)}</span>
         </div>
 
-        <div class="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-          <span class="truncate max-w-[150px]">${item.solicitante} ${isOwner ? '<strong>(Tú)</strong>' : ''}</span>
-          
-          <div class="flex items-center gap-1.5">
+        <div class="pt-2 border-t border-slate-100 dark:border-slate-800/80 space-y-2 text-xs text-slate-500 dark:text-slate-400">
+          <div class="flex flex-col gap-1">
+            <span class="truncate"><strong>Solicitante:</strong> ${item.solicitante} ${isOwner ? '<span class="text-[10px] px-1.5 py-0.2 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold">TÚ</span>' : ''}</span>
+            <span><strong>Validado por:</strong> ${item.validadoPor ? `<span class="font-semibold text-slate-700 dark:text-slate-300">${item.validadoPor}</span>` : '<span class="text-slate-400 italic">No validado</span>'}</span>
+          </div>
+
+          <div class="flex items-center justify-between gap-1.5 pt-1">
             ${hasSustento ? `
-              <button onclick="openModalVisorSustento('${item.id}')" class="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-semibold text-xs flex items-center gap-1">
+              <button onclick="openModalVisorSustento('${item.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold text-xs border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-1">
                 <i data-lucide="paperclip" class="w-3.5 h-3.5"></i>
-                <span>Foto</span>
+                <span>Comprobante</span>
               </button>
-            ` : ''}
+            ` : '<span></span>'}
 
-            ${isOwner ? `
-              <button onclick="editSolicitud('${item.id}')" class="px-2 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs">
-                Editar
-              </button>
-              <button onclick="openModalEliminar('${item.id}')" class="p-1 rounded-lg text-rose-500 hover:bg-rose-100 transition-all">
-                <i data-lucide="trash-2" class="w-4 h-4"></i>
-              </button>
-            ` : ''}
+            <div class="flex items-center gap-1.5">
+              ${isOwner ? `
+                <button onclick="editSolicitud('${item.id}')" class="px-2 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs">
+                  Editar
+                </button>
+                <button onclick="openModalEliminar('${item.id}')" class="p-1 rounded-lg text-rose-500 hover:bg-rose-100 transition-all">
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+              ` : ''}
 
-            <button onclick="openModalAprobacion('${item.id}')" class="px-2 py-1 rounded-lg bg-emerald-600 text-white font-semibold text-xs flex items-center gap-1">
-              <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
-              <span>Validar</span>
-            </button>
+              <button onclick="openModalAprobacion('${item.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-semibold text-xs flex items-center gap-1 shadow-sm">
+                <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+                <span>Validar</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -469,7 +477,7 @@ function renderDataView(items) {
 }
 
 /* ==========================================
-   5. ELIMINACIÓN SEGURA DE REGISTROS PROPIOS
+   6. ELIMINACIÓN SEGURA DE REGISTROS PROPIOS
    ========================================== */
 function openModalEliminar(id) {
   const item = state.solicitudes.find(s => s.id === id);
@@ -530,7 +538,7 @@ function confirmarEliminarPropio() {
 }
 
 /* ==========================================
-   6. VISOR EN PANTALLA COMPLETA INTEGRADO PARA DRIVE, FOTOS Y PDF
+   7. VISOR EN PANTALLA COMPLETA INTEGRADO PARA DRIVE, FOTOS Y PDF
    ========================================== */
 function extractGoogleDriveFileId(url) {
   if (!url) return '';
@@ -573,14 +581,11 @@ function openModalVisorSustento(id) {
     pdfDisplay.src = sourceUrl;
     pdfDisplay.classList.remove('hidden');
   } else if (driveId !== '') {
-    // CONVERSIÓN DE ENLACES DE GOOGLE DRIVE A VISTA PREVIA DIRECTA INCRUSTADA
     const driveDirectImgUrl = `https://lh3.googleusercontent.com/d/${driveId}`;
     const drivePreviewIframeUrl = `https://drive.google.com/file/d/${driveId}/preview`;
     
-    // Probar primero renderizar como imagen directa de Google Drive
     imgDisplay.src = driveDirectImgUrl;
     imgDisplay.onerror = function() {
-      // Si no es imagen, incrustar visor iframe de Drive en pantalla completa
       imgDisplay.classList.add('hidden');
       pdfDisplay.src = drivePreviewIframeUrl;
       pdfDisplay.classList.remove('hidden');
@@ -620,7 +625,7 @@ function formatCurrency(num) {
 }
 
 /* ==========================================
-   7. CREACIÓN Y FORMULARIO CON VISTA PREVIA VISUAL
+   8. CREACIÓN Y FORMULARIO CON VISTA PREVIA VISUAL
    ========================================== */
 function openModalSolicitud(data = null) {
   const modal = document.getElementById('modalSolicitud');
@@ -863,7 +868,7 @@ function handleSaveSolicitud(e) {
 }
 
 /* ==========================================
-   8. MODAL DE VALIDACIÓN 100% FLUIDO Y FIJO
+   9. MODAL DE VALIDACIÓN 100% FLUIDO Y FIJO
    ========================================== */
 function openModalAprobacion(id) {
   const item = state.solicitudes.find(s => s.id === id);

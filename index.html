@@ -39,7 +39,7 @@
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 min-h-screen antialiased flex flex-col selection:bg-acres-500 selection:text-white">
 
   <!-- ============================================================================== -->
-  <!-- 1. PANTALLA DE INICIO DE SESIÓN ACRES CON ALTO CONTRASTE Y TEXTO ACTUALIZADO -->
+  <!-- 1. PANTALLA DE INICIO DE SESIÓN ACRES CON ALTO CONTRASTE -->
   <!-- ============================================================================== -->
   <div id="loginScreen" class="fixed inset-0 z-50 bg-gradient-to-br from-slate-950 via-acres-900 to-slate-950 flex items-center justify-center p-4">
     <div class="login-glass-card w-full max-w-md rounded-3xl p-8 shadow-2xl border border-slate-700/80 text-center space-y-6 animate-fade-in relative overflow-hidden">
@@ -260,7 +260,7 @@
         </div>
       </section>
 
-      <!-- VISTA DE TABLA CON ACCIONES DE VALIDACIÓN PÚBLICA -->
+      <!-- VISTA DE REGISTROS (TABLA EN DESKTOP Y TARJETAS EN CELULARES) -->
       <section>
         <div id="loadingSkeleton" class="glass-card rounded-2xl p-8 text-center space-y-4">
           <div class="inline-block animate-spin w-8 h-8 border-4 border-acres-500 border-t-transparent rounded-full"></div>
@@ -277,7 +277,7 @@
           </div>
         </div>
 
-        <!-- DESKTOP TABLE -->
+        <!-- DESKTOP TABLE (PANTALLAS GRANDES) -->
         <div id="desktopTableView" class="hidden md:block glass-card rounded-2xl overflow-hidden shadow-sm">
           <div class="overflow-x-auto">
             <table class="w-full text-left text-sm border-collapse">
@@ -300,8 +300,8 @@
           </div>
         </div>
 
-        <!-- MOBILE CARDS -->
-        <div id="mobileCardView" class="hidden space-y-3">
+        <!-- MOBILE CARDS (VISTA OPTIMIZADA PARA CELULARES Y TABLETS) -->
+        <div id="mobileCardView" class="block md:hidden space-y-3">
         </div>
       </section>
     </main>
