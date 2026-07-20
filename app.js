@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Sincronización Fluida Sin Saltos Visuales con Candado Asíncrono de 10 Segundos
+ * Visor Modal Integrado 100% Directo para Google Drive, Fotos y PDF
  * ==============================================================================
  */
 
@@ -178,7 +178,7 @@ function setTheme(theme) {
 }
 
 /* ==========================================
-   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN FLUIDA SIN SALTOS VISUALES
+   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN FLUIDA
    ========================================== */
 function startAutoSync() {
   if (autoSyncInterval) clearInterval(autoSyncInterval);
@@ -205,12 +205,10 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
 
         const mergedMap = new Map();
 
-        // Cargar registros remotos de la nube
         remoteList.forEach(item => {
           if (item && item.id) mergedMap.set(item.id, item);
         });
 
-        // Aplicar candado asíncrono a cambios hechos recientemente (< 10 segundos)
         currentList.forEach(item => {
           if (item && item.id) {
             const isRecentlyModified = item._lastModifiedLocally && (Date.now() - item._lastModifiedLocally < 10000);
@@ -218,7 +216,6 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
             if (!mergedMap.has(item.id)) {
               mergedMap.set(item.id, item);
             } else if (isRecentlyModified) {
-              // Si el usuario acaba de cambiar estado o validadoPor en este navegador, NO dejar que el servidor antiguo lo pise
               const remoteItem = mergedMap.get(item.id);
               remoteItem.estado = item.estado;
               remoteItem.validadoPor = item.validadoPor;
@@ -533,8 +530,17 @@ function confirmarEliminarPropio() {
 }
 
 /* ==========================================
-   6. VISOR EN PANTALLA COMPLETA PARA SUSTENTOS (FOTOS / PDF)
+   6. VISOR EN PANTALLA COMPLETA INTEGRADO PARA DRIVE, FOTOS Y PDF
    ========================================== */
+function extractGoogleDriveFileId(url) {
+  if (!url) return '';
+  const matchId = url.match(/id=([a-zA-Z0-9_-]+)/);
+  const matchFileD = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (matchId && matchId[1]) return matchId[1];
+  if (matchFileD && matchFileD[1]) return matchFileD[1];
+  return '';
+}
+
 function openModalVisorSustento(id) {
   const item = state.solicitudes.find(s => s.id === id);
   if (!item) return;
@@ -558,15 +564,29 @@ function openModalVisorSustento(id) {
   downloadLink.href = sourceUrl;
   downloadLink.setAttribute('download', item.sustentoNombre || 'comprobante.jpg');
 
+  const driveId = extractGoogleDriveFileId(sourceUrl);
+
   if (sourceUrl.startsWith('data:image/') || sourceUrl.match(/\.(jpeg|jpg|png|gif|webp)($|\?)/i)) {
     imgDisplay.src = sourceUrl;
     imgDisplay.classList.remove('hidden');
   } else if (sourceUrl.startsWith('data:application/pdf') || sourceUrl.endsWith('.pdf')) {
     pdfDisplay.src = sourceUrl;
     pdfDisplay.classList.remove('hidden');
-  } else if (sourceUrl.includes('drive.google.com') || sourceUrl.includes('google.com')) {
+  } else if (driveId !== '') {
+    // CONVERSIÓN DE ENLACES DE GOOGLE DRIVE A VISTA PREVIA DIRECTA INCRUSTADA
+    const driveDirectImgUrl = `https://lh3.googleusercontent.com/d/${driveId}`;
+    const drivePreviewIframeUrl = `https://drive.google.com/file/d/${driveId}/preview`;
+    
+    // Probar primero renderizar como imagen directa de Google Drive
+    imgDisplay.src = driveDirectImgUrl;
+    imgDisplay.onerror = function() {
+      // Si no es imagen, incrustar visor iframe de Drive en pantalla completa
+      imgDisplay.classList.add('hidden');
+      pdfDisplay.src = drivePreviewIframeUrl;
+      pdfDisplay.classList.remove('hidden');
+    };
+    imgDisplay.classList.remove('hidden');
     driveBtn.href = sourceUrl;
-    fallbackText.classList.remove('hidden');
   } else if (sourceUrl !== '') {
     imgDisplay.src = sourceUrl;
     imgDisplay.classList.remove('hidden');
@@ -737,13 +757,16 @@ function showFilePreviewUI(fileName, sourceUrl = '') {
   imgElem.classList.add('hidden');
   pdfIcon.classList.add('hidden');
 
-  if (sourceUrl && (sourceUrl.startsWith('data:image/') || sourceUrl.match(/\.(jpeg|jpg|png|gif|webp)($|\?)/i))) {
-    imgElem.src = sourceUrl;
+  const driveId = extractGoogleDriveFileId(sourceUrl);
+  const displaySrc = driveId ? `https://lh3.googleusercontent.com/d/${driveId}` : sourceUrl;
+
+  if (displaySrc && (displaySrc.startsWith('data:image/') || displaySrc.includes('googleusercontent.com') || displaySrc.match(/\.(jpeg|jpg|png|gif|webp)($|\?)/i))) {
+    imgElem.src = displaySrc;
     imgElem.classList.remove('hidden');
   } else if (sourceUrl && (sourceUrl.startsWith('data:application/pdf') || sourceUrl.endsWith('.pdf'))) {
     pdfIcon.classList.remove('hidden');
-  } else if (sourceUrl) {
-    imgElem.src = sourceUrl;
+  } else if (displaySrc) {
+    imgElem.src = displaySrc;
     imgElem.classList.remove('hidden');
   } else {
     pdfIcon.classList.remove('hidden');
@@ -807,7 +830,7 @@ function handleSaveSolicitud(e) {
     sustentoNombre: sustentoNombre,
     sustentoBase64: sustentoBase64,
     estado: estadoPrevio,
-    _lastModifiedLocally: Date.now() // Candado de modificación reciente
+    _lastModifiedLocally: Date.now()
   };
 
   const existingIndex = state.solicitudes.findIndex(s => s.id === recordId);
@@ -865,7 +888,6 @@ function confirmarAprobacion() {
   const nuevoEstado = document.getElementById('aprobacionNuevoEstado').value;
   const validadoPor = (document.getElementById('aprobacionValidadoPor').value || '').trim();
 
-  // 1. Actualizar inmediatamente con marca de tiempo local de 10 segundos
   const itemIndex = state.solicitudes.findIndex(s => s.id === targetId);
   if (itemIndex >= 0) {
     state.solicitudes[itemIndex].estado = nuevoEstado;
@@ -880,7 +902,6 @@ function confirmarAprobacion() {
   closeModalAprobacion();
   showToast(`Estado actualizado a: ${nuevoEstado}`, 'success');
 
-  // 2. Enviar actualización a la nube sin disparar temporizadores conflictivos
   const item = state.solicitudes.find(s => s.id === targetId);
   if (item) {
     fetch(API_URL, {
