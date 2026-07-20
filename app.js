@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Autenticación 100% Google OAuth 2.0 (Google Identity Services)
+ * Autenticación 100% Google OAuth 2.0 con Sincronización Multiusuario en Tiempo Real
  * ==============================================================================
  */
 
@@ -16,6 +16,8 @@ let state = {
   selectedFileObject: null,
   selectedAprobacionId: null
 };
+
+let autoSyncInterval = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
@@ -43,9 +45,10 @@ function handleGoogleSignInResponse(response) {
     }
     
     state.currentUserEmail = verifiedEmail;
-    showToast(`¡Autenticado con Google como ${verifiedEmail}!`, 'success');
+    showToast(`¡Autenticado como ${verifiedEmail}!`, 'success');
     showDashboardView();
     fetchSolicitudesFromAPI();
+    startAutoSync();
   } else {
     showToast('No se pudo verificar la cuenta de Google.', 'error');
   }
@@ -73,12 +76,14 @@ function checkAuthSession() {
     state.currentUserPicture = savedPic || '';
     showDashboardView();
     fetchSolicitudesFromAPI();
+    startAutoSync();
   } else {
     showLoginView();
   }
 }
 
 function showLoginView() {
+  if (autoSyncInterval) clearInterval(autoSyncInterval);
   document.getElementById('loginScreen').classList.remove('hidden');
   document.getElementById('appDashboard').classList.add('hidden');
   document.getElementById('appDashboard').classList.remove('flex');
@@ -103,6 +108,7 @@ function showDashboardView() {
 }
 
 function logoutApp() {
+  if (autoSyncInterval) clearInterval(autoSyncInterval);
   localStorage.removeItem('acres_user_email');
   localStorage.removeItem('acres_user_picture');
   state.currentUserEmail = '';
@@ -171,13 +177,24 @@ function setTheme(theme) {
 }
 
 /* ==========================================
-   3. COMUNICACIÓN CON API DE GOOGLE SHEETS
+   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN EN TIEMPO REAL
    ========================================== */
-function fetchSolicitudesFromAPI() {
-  showLoading(true);
+function startAutoSync() {
+  if (autoSyncInterval) clearInterval(autoSyncInterval);
+  // Auto-refresca cada 10 segundos silenciosamente
+  autoSyncInterval = setInterval(() => {
+    fetchSolicitudesFromAPI(false);
+  }, 10000);
+}
+
+function fetchSolicitudesFromAPI(showSpinner = true) {
+  const syncBtnIcon = document.getElementById('syncSpinner');
+  if (showSpinner && syncBtnIcon) {
+    syncBtnIcon.classList.add('animate-spin');
+  }
 
   const cachedData = localStorage.getItem('acres_cached_solicitudes');
-  if (cachedData) {
+  if (cachedData && state.solicitudes.length === 0) {
     try {
       state.solicitudes = JSON.parse(cachedData);
       updateKPIs();
@@ -189,6 +206,8 @@ function fetchSolicitudesFromAPI() {
     .then(res => res.json())
     .then(response => {
       showLoading(false);
+      if (syncBtnIcon) syncBtnIcon.classList.remove('animate-spin');
+
       if (response && response.solicitudes) {
         state.solicitudes = response.solicitudes;
         localStorage.setItem('acres_cached_solicitudes', JSON.stringify(response.solicitudes));
@@ -198,6 +217,7 @@ function fetchSolicitudesFromAPI() {
     })
     .catch(err => {
       showLoading(false);
+      if (syncBtnIcon) syncBtnIcon.classList.remove('animate-spin');
       if (!state.solicitudes) state.solicitudes = [];
       updateKPIs();
       applyFilters();
@@ -314,10 +334,13 @@ function renderDataView(items) {
     const isOwner = item.solicitante.toLowerCase() === state.currentUserEmail.toLowerCase();
     const isReembolsado = item.estado === 'Reembolsado';
 
-    const sustentoBtnHtml = item.sustentoUrl 
-      ? `<a href="${item.sustentoUrl}" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-800 text-acres-600 dark:text-acres-400 hover:underline">
+    const hasSustento = item.sustentoUrl || item.sustentoNombre || item.sustentoBase64;
+    const sustentoLink = item.sustentoUrl || item.sustentoBase64 || '#';
+
+    const sustentoBtnHtml = hasSustento 
+      ? `<a href="${sustentoLink}" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50 hover:bg-emerald-100 transition-all">
           <i data-lucide="paperclip" class="w-3.5 h-3.5"></i>
-          <span class="max-w-[100px] truncate">${item.sustentoNombre || 'Ver Sustento'}</span>
+          <span class="max-w-[110px] truncate">${item.sustentoNombre || 'Ver Foto'}</span>
          </a>`
       : `<span class="text-xs text-slate-400 italic">Sin sustento</span>`;
 
@@ -364,6 +387,9 @@ function renderDataView(items) {
     const isOwner = item.solicitante.toLowerCase() === state.currentUserEmail.toLowerCase();
     const isReembolsado = item.estado === 'Reembolsado';
 
+    const hasSustento = item.sustentoUrl || item.sustentoNombre || item.sustentoBase64;
+    const sustentoLink = item.sustentoUrl || item.sustentoBase64 || '#';
+
     return `
       <div class="glass-card rounded-2xl p-4 space-y-3 shadow-sm border border-slate-200 dark:border-slate-800">
         <div class="flex items-center justify-between">
@@ -385,9 +411,10 @@ function renderDataView(items) {
           <span class="truncate max-w-[150px]">${item.solicitante} ${isOwner ? '<strong>(Tú)</strong>' : ''}</span>
           
           <div class="flex items-center gap-2">
-            ${item.sustentoUrl ? `
-              <a href="${item.sustentoUrl}" target="_blank" class="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-acres-500">
-                <i data-lucide="file-text" class="w-4 h-4"></i>
+            ${hasSustento ? `
+              <a href="${sustentoLink}" target="_blank" class="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-300 font-semibold text-xs flex items-center gap-1">
+                <i data-lucide="paperclip" class="w-3.5 h-3.5"></i>
+                <span>Sustento</span>
               </a>
             ` : ''}
 
@@ -584,6 +611,12 @@ function handleSaveSolicitud(e) {
   const existingId = document.getElementById('formId').value;
   const recordId = (existingId && existingId.trim() !== '') ? existingId.trim() : generateUniqueId();
 
+  const sustentoNombre = state.selectedFileObject 
+    ? state.selectedFileObject.fileName 
+    : (document.getElementById('formSustentoNombre').value || '');
+
+  const sustentoBase64 = state.selectedFileObject ? state.selectedFileObject.base64Data : '';
+
   const newRecord = {
     id: recordId,
     fecha: document.getElementById('formFecha').value,
@@ -591,13 +624,14 @@ function handleSaveSolicitud(e) {
     categoria: document.getElementById('formCategoria').value,
     monto: parseFloat(document.getElementById('formMonto').value) || 0.00,
     detalle: document.getElementById('formDetalle').value,
-    sustentoUrl: document.getElementById('formSustentoUrl').value || '',
-    sustentoNombre: state.selectedFileObject ? state.selectedFileObject.fileName : (document.getElementById('formSustentoNombre').value || ''),
+    sustentoUrl: document.getElementById('formSustentoUrl').value || sustentoBase64 || '',
+    sustentoNombre: sustentoNombre,
+    sustentoBase64: sustentoBase64,
     estado: document.getElementById('formEstado').value || 'Pendiente',
     validadoPor: document.getElementById('formValidadoPor').value || ''
   };
 
-  // 1. RENDERIZADO OPTIMISTA INSTANTÁNEO (< 0.1s en pantalla)
+  // 1. RENDERIZADO OPTIMISTA INSTANTÁNEO Y PRESERVACIÓN DE FOTO (< 0.1s)
   const existingIndex = state.solicitudes.findIndex(s => s.id === recordId);
   if (existingIndex >= 0) {
     state.solicitudes[existingIndex] = newRecord;
@@ -610,7 +644,7 @@ function handleSaveSolicitud(e) {
   applyFilters();
 
   closeModalSolicitud();
-  showToast('Solicitud guardada correctamente.', 'success');
+  showToast('Solicitud y sustento guardados correctamente.', 'success');
 
   btnSave.disabled = false;
   btnSave.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i> Guardar Solicitud`;
@@ -626,6 +660,9 @@ function handleSaveSolicitud(e) {
     mode: 'no-cors',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'saveSolicitud', data: formData })
+  }).then(() => {
+    // Re-sincroniza tras guardar en Drive
+    setTimeout(() => fetchSolicitudesFromAPI(false), 2500);
   }).catch(() => {});
 }
 
