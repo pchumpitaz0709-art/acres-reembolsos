@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Autenticación 100% Google OAuth 2.0 con Fusión Fluida Sin Parpadeos
+ * Autenticación 100% Google OAuth 2.0 con Validación Pública por Botón Verde
  * ==============================================================================
  */
 
@@ -203,19 +203,15 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
         const remoteList = response.solicitudes;
         const currentList = state.solicitudes;
 
-        // Fusión perfecta: Mapa indexado por ID
         const mergedMap = new Map();
 
-        // 1. Agregar registros que están en el estado actual (para conservar los recién creados)
         currentList.forEach(item => {
           if (item && item.id) mergedMap.set(item.id, item);
         });
 
-        // 2. Sobrescribir con los registros remotos del servidor (que traen la URL real de Drive)
         remoteList.forEach(item => {
           if (item && item.id) {
             const existing = mergedMap.get(item.id);
-            // Conservar sustento base64 si el remoto aún no terminó de procesar
             if (existing && existing.sustentoBase64 && !item.sustentoUrl) {
               item.sustentoBase64 = existing.sustentoBase64;
             }
@@ -331,7 +327,7 @@ function updateKPIs() {
 }
 
 /* ==========================================
-   VISTA DE TABLA CON CONTROL ESTRICTO DE PERTENENCIA POR CORREO
+   VISTA DE TABLA CON ACCIONES Y BOTÓN VERDE DE VALIDACIÓN
    ========================================== */
 function renderDataView(items) {
   const desktopTbody = document.getElementById('desktopTableBody');
@@ -400,7 +396,7 @@ function renderDataView(items) {
                 <i data-lucide="trash-2" class="w-4 h-4"></i>
               </button>
             ` : ''}
-            <button onclick="openModalAprobacion('${item.id}')" title="Aprobar / Validar Reembolso (Jefatura)" class="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-200 transition-all flex items-center gap-1">
+            <button onclick="openModalAprobacion('${item.id}')" title="Aprobar / Validar Reembolso" class="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-200 transition-all flex items-center gap-1">
               <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
               <span>Validar</span>
             </button>
@@ -593,13 +589,12 @@ function formatCurrency(num) {
 }
 
 /* ==========================================
-   7. COMPRESIÓN DE FOTOS Y FORMULARIOS CON FUSIÓN SIN PARPADEOS
+   7. CREACIÓN LIMPIA Y MODAL DE VALIDACIÓN POR BOTÓN VERDE
    ========================================== */
 function openModalSolicitud(data = null) {
   const modal = document.getElementById('modalSolicitud');
   const form = document.getElementById('formSolicitud');
   const title = document.getElementById('modalSolicitudTitle');
-  const seccionValidacion = document.getElementById('seccionValidacionJefatura');
 
   form.reset();
   clearSelectedFile();
@@ -614,14 +609,10 @@ function openModalSolicitud(data = null) {
     document.getElementById('formDetalle').value = data.detalle;
     document.getElementById('formSustentoUrl').value = data.sustentoUrl || '';
     document.getElementById('formSustentoNombre').value = data.sustentoNombre || '';
-    document.getElementById('formEstado').value = data.estado || 'Pendiente';
-    document.getElementById('formValidadoPor').value = data.validadoPor || '';
 
     if (data.sustentoNombre) {
       showFilePreviewUI(data.sustentoNombre);
     }
-
-    seccionValidacion.classList.remove('hidden');
 
     const itemSolicitanteClean = (data.solicitante || '').toLowerCase().trim();
     const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
@@ -636,10 +627,6 @@ function openModalSolicitud(data = null) {
     document.getElementById('formId').value = '';
     document.getElementById('formFecha').value = new Date().toISOString().split('T')[0];
     document.getElementById('formSolicitante').value = state.currentUserEmail;
-    document.getElementById('formEstado').value = 'Pendiente';
-    document.getElementById('formValidadoPor').value = '';
-
-    seccionValidacion.classList.add('hidden');
 
     ['formFecha', 'formCategoria', 'formMonto', 'formDetalle'].forEach(fieldId => {
       document.getElementById(fieldId).disabled = false;
@@ -763,6 +750,11 @@ function handleSaveSolicitud(e) {
 
   const sustentoBase64 = state.selectedFileObject ? state.selectedFileObject.base64Data : '';
 
+  // Conserva el estado y validación previos si se está editando
+  const existingItem = state.solicitudes.find(s => s.id === recordId);
+  const estadoPrevio = existingItem ? existingItem.estado : 'Pendiente';
+  const validadoPorPrevio = existingItem ? existingItem.validadoPor : '';
+
   const newRecord = {
     id: recordId,
     fecha: document.getElementById('formFecha').value,
@@ -773,11 +765,10 @@ function handleSaveSolicitud(e) {
     sustentoUrl: document.getElementById('formSustentoUrl').value || sustentoBase64 || '',
     sustentoNombre: sustentoNombre,
     sustentoBase64: sustentoBase64,
-    estado: document.getElementById('formEstado').value || 'Pendiente',
-    validadoPor: document.getElementById('formValidadoPor').value || ''
+    estado: estadoPrevio,
+    validadoPor: validadoPorPrevio
   };
 
-  // 1. RENDERIZADO INSTANTÁNEO EN MEMORIA
   const existingIndex = state.solicitudes.findIndex(s => s.id === recordId);
   if (existingIndex >= 0) {
     state.solicitudes[existingIndex] = newRecord;
@@ -795,7 +786,6 @@ function handleSaveSolicitud(e) {
   btnSave.disabled = false;
   btnSave.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i> Guardar Solicitud`;
 
-  // 2. ENVÍO A GOOGLE SHEETS
   const formData = {
     ...newRecord,
     fileObject: state.selectedFileObject
@@ -806,14 +796,20 @@ function handleSaveSolicitud(e) {
     mode: 'no-cors',
     body: JSON.stringify({ action: 'saveSolicitud', data: formData })
   }).then(() => {
-    // Sincroniza tras dar 4s para que Google Sheets termine de procesar en background
     setTimeout(() => fetchSolicitudesFromAPI(false), 4000);
   }).catch(() => {});
 }
 
+/* ==========================================
+   8. MODAL DE VALIDACIÓN (PÚBLICO Y DIRECTO DESDE BOTÓN VERDE VALIDAR)
+   ========================================== */
 function openModalAprobacion(id) {
+  const item = state.solicitudes.find(s => s.id === id);
+  if (!item) return;
+
   state.selectedAprobacionId = id;
-  document.getElementById('aprobacionIdDisplay').textContent = `#${id}`;
+  document.getElementById('aprobacionNuevoEstado').value = item.estado || 'Reembolsado';
+  document.getElementById('aprobacionValidadoPor').value = item.validadoPor || '';
   document.getElementById('modalAprobacion').classList.remove('hidden');
   lucide.createIcons();
 }
@@ -827,7 +823,7 @@ function confirmarAprobacion() {
   if (!state.selectedAprobacionId) return;
 
   const nuevoEstado = document.getElementById('aprobacionNuevoEstado').value;
-  const validadoPor = document.getElementById('aprobacionValidadoPor').value || 'Jefatura ACRES';
+  const validadoPor = document.getElementById('aprobacionValidadoPor').value || 'Jefatura';
 
   const itemIndex = state.solicitudes.findIndex(s => s.id === state.selectedAprobacionId);
   if (itemIndex >= 0) {
@@ -839,7 +835,7 @@ function confirmarAprobacion() {
   }
 
   closeModalAprobacion();
-  showToast('Estado actualizado.', 'success');
+  showToast('Validación y estado actualizados.', 'success');
 
   fetch(API_URL, {
     method: 'POST',
@@ -850,6 +846,8 @@ function confirmarAprobacion() {
       nuevoEstado: nuevoEstado,
       validadoPor: validadoPor
     })
+  }).then(() => {
+    setTimeout(() => fetchSolicitudesFromAPI(false), 2000);
   }).catch(() => {});
 }
 
