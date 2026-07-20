@@ -1,6 +1,6 @@
 /**
  * ==============================================================================
- * ACRES REEMBOLSOS - LÓGICA FRONTEND (GitHub Pages Version)
+ * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
  * Autenticación 100% Google OAuth 2.0 (Google Identity Services)
  * ==============================================================================
  */
@@ -198,7 +198,6 @@ function fetchSolicitudesFromAPI() {
     })
     .catch(err => {
       showLoading(false);
-      // Si aún no hay conexión o está vacía la hoja, muestra 0 solicitudes limpiamente
       if (!state.solicitudes) state.solicitudes = [];
       updateKPIs();
       applyFilters();
@@ -568,6 +567,12 @@ function clearSelectedFile() {
   document.getElementById('filePreviewContainer').classList.add('hidden');
 }
 
+function generateUniqueId() {
+  const fechaStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const randomHex = Math.floor(1000 + Math.random() * 9000).toString(16).toUpperCase();
+  return 'REEM-' + fechaStr + '-' + randomHex;
+}
+
 function handleSaveSolicitud(e) {
   e.preventDefault();
 
@@ -576,17 +581,43 @@ function handleSaveSolicitud(e) {
   btnSave.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Guardando...`;
   lucide.createIcons();
 
-  const formData = {
-    id: document.getElementById('formId').value,
+  const existingId = document.getElementById('formId').value;
+  const recordId = (existingId && existingId.trim() !== '') ? existingId.trim() : generateUniqueId();
+
+  const newRecord = {
+    id: recordId,
     fecha: document.getElementById('formFecha').value,
     solicitante: document.getElementById('formSolicitante').value,
     categoria: document.getElementById('formCategoria').value,
-    monto: document.getElementById('formMonto').value,
+    monto: parseFloat(document.getElementById('formMonto').value) || 0.00,
     detalle: document.getElementById('formDetalle').value,
-    sustentoUrl: document.getElementById('formSustentoUrl').value,
-    sustentoNombre: document.getElementById('formSustentoNombre').value,
-    estado: document.getElementById('formEstado').value,
-    validadoPor: document.getElementById('formValidadoPor').value,
+    sustentoUrl: document.getElementById('formSustentoUrl').value || '',
+    sustentoNombre: state.selectedFileObject ? state.selectedFileObject.fileName : (document.getElementById('formSustentoNombre').value || ''),
+    estado: document.getElementById('formEstado').value || 'Pendiente',
+    validadoPor: document.getElementById('formValidadoPor').value || ''
+  };
+
+  // 1. RENDERIZADO OPTIMISTA INSTANTÁNEO (< 0.1s en pantalla)
+  const existingIndex = state.solicitudes.findIndex(s => s.id === recordId);
+  if (existingIndex >= 0) {
+    state.solicitudes[existingIndex] = newRecord;
+  } else {
+    state.solicitudes.unshift(newRecord);
+  }
+
+  localStorage.setItem('acres_cached_solicitudes', JSON.stringify(state.solicitudes));
+  updateKPIs();
+  applyFilters();
+
+  closeModalSolicitud();
+  showToast('Solicitud guardada correctamente.', 'success');
+
+  btnSave.disabled = false;
+  btnSave.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i> Guardar Solicitud`;
+
+  // 2. SINCRONIZACIÓN EN SEGUNDO PLANO CON GOOGLE SHEETS & DRIVE
+  const formData = {
+    ...newRecord,
     fileObject: state.selectedFileObject
   };
 
@@ -595,21 +626,7 @@ function handleSaveSolicitud(e) {
     mode: 'no-cors',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'saveSolicitud', data: formData })
-  })
-  .then(() => {
-    btnSave.disabled = false;
-    btnSave.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i> Guardar Solicitud`;
-    showToast('Solicitud enviada correctamente.', 'success');
-    closeModalSolicitud();
-    setTimeout(fetchSolicitudesFromAPI, 1000);
-  })
-  .catch(err => {
-    btnSave.disabled = false;
-    btnSave.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i> Guardar Solicitud`;
-    showToast('Solicitud guardada.', 'success');
-    closeModalSolicitud();
-    setTimeout(fetchSolicitudesFromAPI, 1000);
-  });
+  }).catch(() => {});
 }
 
 function openModalAprobacion(id) {
@@ -630,29 +647,29 @@ function confirmarAprobacion() {
   const nuevoEstado = document.getElementById('aprobacionNuevoEstado').value;
   const validadoPor = document.getElementById('aprobacionValidadoPor').value || 'Jefatura ACRES';
 
-  const payload = {
-    action: 'updateStatus',
-    id: state.selectedAprobacionId,
-    nuevoEstado: nuevoEstado,
-    validadoPor: validadoPor
-  };
+  const itemIndex = state.solicitudes.findIndex(s => s.id === state.selectedAprobacionId);
+  if (itemIndex >= 0) {
+    state.solicitudes[itemIndex].estado = nuevoEstado;
+    state.solicitudes[itemIndex].validadoPor = validadoPor;
+    localStorage.setItem('acres_cached_solicitudes', JSON.stringify(state.solicitudes));
+    updateKPIs();
+    applyFilters();
+  }
+
+  closeModalAprobacion();
+  showToast('Estado actualizado.', 'success');
 
   fetch(API_URL, {
     method: 'POST',
     mode: 'no-cors',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  })
-  .then(() => {
-    closeModalAprobacion();
-    showToast('Estado actualizado.', 'success');
-    setTimeout(fetchSolicitudesFromAPI, 1000);
-  })
-  .catch(() => {
-    closeModalAprobacion();
-    showToast('Estado actualizado.', 'success');
-    setTimeout(fetchSolicitudesFromAPI, 1000);
-  });
+    body: JSON.stringify({
+      action: 'updateStatus',
+      id: state.selectedAprobacionId,
+      nuevoEstado: nuevoEstado,
+      validadoPor: validadoPor
+    })
+  }).catch(() => {});
 }
 
 function showLoading(show) {
