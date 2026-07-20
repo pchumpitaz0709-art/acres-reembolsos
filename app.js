@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Sincronización Ininterrumpida Bidireccional y Asignación de Aprobador
+ * Sincronización Global Unificada Multiusuario en Tiempo Real
  * ==============================================================================
  */
 
@@ -112,6 +112,7 @@ function logoutApp() {
   localStorage.removeItem('acres_user_email');
   localStorage.removeItem('acres_user_picture');
   localStorage.removeItem('acres_cached_solicitudes');
+  localStorage.removeItem('acres_status_overrides');
   state.currentUserEmail = '';
   state.currentUserPicture = '';
   state.solicitudes = [];
@@ -178,13 +179,13 @@ function setTheme(theme) {
 }
 
 /* ==========================================
-   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN EN TIEMPO REAL ANTI-REVERSIÓN PERMANENTE
+   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN EN TIEMPO REAL GLOBAL
    ========================================== */
 function startAutoSync() {
   if (autoSyncInterval) clearInterval(autoSyncInterval);
   autoSyncInterval = setInterval(() => {
     fetchSolicitudesFromAPI(false);
-  }, 5000);
+  }, 4000);
 }
 
 function fetchSolicitudesFromAPI(showSpinner = true) {
@@ -192,12 +193,6 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
   if (showSpinner && syncBtnIcon) {
     syncBtnIcon.classList.add('animate-spin');
   }
-
-  // Cargar sobrescrituras locales de estado garantizadas
-  let statusOverrides = {};
-  try {
-    statusOverrides = JSON.parse(localStorage.getItem('acres_status_overrides')) || {};
-  } catch (e) {}
 
   fetch(API_URL + '?action=getData&t=' + Date.now())
     .then(res => res.json())
@@ -211,22 +206,20 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
 
         const mergedMap = new Map();
 
-        currentList.forEach(item => {
+        // Cargar primero datos remotos como fuente de verdad absoluta de Google Sheets
+        remoteList.forEach(item => {
           if (item && item.id) mergedMap.set(item.id, item);
         });
 
-        remoteList.forEach(item => {
-          if (item && item.id) {
-            // Aplicar sobrescritura si el estado fue modificado por la interfaz
-            if (statusOverrides[item.id]) {
-              item.estado = statusOverrides[item.id].estado;
-              item.validadoPor = statusOverrides[item.id].validadoPor;
-            }
-            const existing = mergedMap.get(item.id);
-            if (existing && existing.sustentoBase64 && !item.sustentoUrl) {
-              item.sustentoBase64 = existing.sustentoBase64;
-            }
+        // Preservar comprobante local base64 si aún se está subiendo
+        currentList.forEach(item => {
+          if (item && item.id && !mergedMap.has(item.id)) {
             mergedMap.set(item.id, item);
+          } else if (item && item.id && mergedMap.has(item.id)) {
+            const remoteItem = mergedMap.get(item.id);
+            if (item.sustentoBase64 && !remoteItem.sustentoUrl) {
+              remoteItem.sustentoBase64 = item.sustentoBase64;
+            }
           }
         });
 
@@ -528,7 +521,7 @@ function confirmarEliminarPropio() {
       userEmail: state.currentUserEmail
     })
   }).then(() => {
-    setTimeout(() => fetchSolicitudesFromAPI(false), 4000);
+    setTimeout(() => fetchSolicitudesFromAPI(false), 2000);
   }).catch(() => {});
 }
 
@@ -807,12 +800,12 @@ function handleSaveSolicitud(e) {
     mode: 'no-cors',
     body: JSON.stringify({ action: 'saveSolicitud', data: formData })
   }).then(() => {
-    setTimeout(() => fetchSolicitudesFromAPI(false), 3000);
+    setTimeout(() => fetchSolicitudesFromAPI(false), 2000);
   }).catch(() => {});
 }
 
 /* ==========================================
-   8. MODAL DE VALIDACIÓN BIDIRECCIONAL PERMANENTE
+   8. MODAL DE VALIDACIÓN CON SINCRONIZACIÓN GLOBAL INSTANTÁNEA
    ========================================== */
 function openModalAprobacion(id) {
   const item = state.solicitudes.find(s => s.id === id);
@@ -837,20 +830,12 @@ function confirmarAprobacion() {
   const nuevoEstado = document.getElementById('aprobacionNuevoEstado').value;
   const validadoPor = (document.getElementById('aprobacionValidadoPor').value || '').trim();
 
-  // 1. Actualizar estado local inmediatamente
+  // 1. Actualizar estado y validadoPor en el objeto local
   const itemIndex = state.solicitudes.findIndex(s => s.id === targetId);
   if (itemIndex >= 0) {
     state.solicitudes[itemIndex].estado = nuevoEstado;
     state.solicitudes[itemIndex].validadoPor = validadoPor;
   }
-
-  // 2. Guardar en mapa de anulaciones/sobrescrituras de estado permanente
-  let statusOverrides = {};
-  try {
-    statusOverrides = JSON.parse(localStorage.getItem('acres_status_overrides')) || {};
-  } catch (e) {}
-  statusOverrides[targetId] = { estado: nuevoEstado, validadoPor: validadoPor };
-  localStorage.setItem('acres_status_overrides', JSON.stringify(statusOverrides));
 
   localStorage.setItem('acres_cached_solicitudes', JSON.stringify(state.solicitudes));
   updateKPIs();
@@ -859,7 +844,7 @@ function confirmarAprobacion() {
   closeModalAprobacion();
   showToast(`Estado actualizado a: ${nuevoEstado}`, 'success');
 
-  // 3. Enviar actualización a Google Sheets (saveSolicitud asegura que se sobrescriban todas las celdas en el Excel)
+  // 2. Enviar actualización a Google Sheets para que se guarde globalmente en la nube
   const item = state.solicitudes.find(s => s.id === targetId);
   if (item) {
     fetch(API_URL, {
@@ -870,7 +855,8 @@ function confirmarAprobacion() {
         data: item
       })
     }).then(() => {
-      setTimeout(() => fetchSolicitudesFromAPI(false), 3000);
+      // Sincronización transparente tras 1.5s para unificar a todos los usuarios
+      setTimeout(() => fetchSolicitudesFromAPI(false), 1500);
     }).catch(() => {});
   }
 }
