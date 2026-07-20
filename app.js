@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Autenticación 100% Google OAuth 2.0 con Fusión Robusta Anti-Pérdidas Multiusuario
+ * Autenticación 100% Google OAuth 2.0 con Control Estricto de Pertenencia por Correo
  * ==============================================================================
  */
 
@@ -111,6 +111,7 @@ function logoutApp() {
   if (autoSyncInterval) clearInterval(autoSyncInterval);
   localStorage.removeItem('acres_user_email');
   localStorage.removeItem('acres_user_picture');
+  localStorage.removeItem('acres_cached_solicitudes'); // Limpia caché local al cerrar sesión para cambiar de cuenta limpiamente
   state.currentUserEmail = '';
   state.currentUserPicture = '';
   state.solicitudes = [];
@@ -183,27 +184,13 @@ function startAutoSync() {
   if (autoSyncInterval) clearInterval(autoSyncInterval);
   autoSyncInterval = setInterval(() => {
     fetchSolicitudesFromAPI(false);
-  }, 6000);
+  }, 5000);
 }
 
 function fetchSolicitudesFromAPI(showSpinner = true) {
   const syncBtnIcon = document.getElementById('syncSpinner');
   if (showSpinner && syncBtnIcon) {
     syncBtnIcon.classList.add('animate-spin');
-  }
-
-  // Cargar caché local primero
-  const cachedData = localStorage.getItem('acres_cached_solicitudes');
-  let localList = [];
-  if (cachedData) {
-    try {
-      localList = JSON.parse(cachedData) || [];
-      if (state.solicitudes.length === 0) {
-        state.solicitudes = localList;
-        updateKPIs();
-        applyFilters();
-      }
-    } catch (e) {}
   }
 
   fetch(API_URL + '?action=getData&t=' + Date.now())
@@ -213,24 +200,9 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
       if (syncBtnIcon) syncBtnIcon.classList.remove('animate-spin');
 
       if (response && Array.isArray(response.solicitudes)) {
-        // Fusión inteligente: combinar registros remotos con locales para que NADA se borre al presionar F5
-        const mergedMap = new Map();
-        
-        // Agregar registros remotos del servidor
-        response.solicitudes.forEach(item => {
-          if (item && item.id) mergedMap.set(item.id, item);
-        });
-
-        // Preservar registros locales que aún estén sincronizando
-        localList.forEach(item => {
-          if (item && item.id && !mergedMap.has(item.id)) {
-            mergedMap.set(item.id, item);
-          }
-        });
-
-        const mergedArray = Array.from(mergedMap.values());
-        state.solicitudes = mergedArray;
-        localStorage.setItem('acres_cached_solicitudes', JSON.stringify(mergedArray));
+        // La fuente de verdad absoluta es el servidor central de Google Sheets
+        state.solicitudes = response.solicitudes;
+        localStorage.setItem('acres_cached_solicitudes', JSON.stringify(response.solicitudes));
         updateKPIs();
         applyFilters();
       }
@@ -263,7 +235,10 @@ function applyFilters() {
   const selectedCategoria = document.getElementById('categoriaFilter').value;
 
   const filtered = state.solicitudes.filter(item => {
-    if (state.currentTab === 'MIS_SOLICITUDES' && item.solicitante.toLowerCase() !== state.currentUserEmail.toLowerCase()) {
+    const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
+    const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
+
+    if (state.currentTab === 'MIS_SOLICITUDES' && itemSolicitanteClean !== currentEmailClean) {
       return false;
     }
     if (state.currentTab === 'Pendiente' && item.estado !== 'Pendiente') {
@@ -276,9 +251,9 @@ function applyFilters() {
       return false;
     }
     if (searchText !== '') {
-      const matchSolicitante = item.solicitante.toLowerCase().includes(searchText);
-      const matchDetalle = item.detalle.toLowerCase().includes(searchText);
-      const matchValidado = item.validadoPor.toLowerCase().includes(searchText);
+      const matchSolicitante = itemSolicitanteClean.includes(searchText);
+      const matchDetalle = (item.detalle || '').toLowerCase().includes(searchText);
+      const matchValidado = (item.validadoPor || '').toLowerCase().includes(searchText);
       if (!matchSolicitante && !matchDetalle && !matchValidado) {
         return false;
       }
@@ -298,6 +273,8 @@ function updateKPIs() {
   let misMonto = 0;
   let misCount = 0;
 
+  const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
+
   state.solicitudes.forEach(item => {
     const monto = parseFloat(item.monto) || 0;
     totalMonto += monto;
@@ -310,7 +287,8 @@ function updateKPIs() {
       reembolsadosCount++;
     }
 
-    if (item.solicitante.toLowerCase() === state.currentUserEmail.toLowerCase()) {
+    const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
+    if (itemSolicitanteClean === currentEmailClean) {
       misMonto += monto;
       misCount++;
     }
@@ -330,7 +308,7 @@ function updateKPIs() {
 }
 
 /* ==========================================
-   VISTA DE TABLA CON SEGURIDAD PARA ELIMINAR EXCLUSIVAMENTE REGISTROS PROPIOS
+   VISTA DE TABLA CON CONTROL ESTRICTO DE PERTENENCIA POR CORREO
    ========================================== */
 function renderDataView(items) {
   const desktopTbody = document.getElementById('desktopTableBody');
@@ -349,8 +327,12 @@ function renderDataView(items) {
 
   emptyState.classList.add('hidden');
 
+  const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
+
   desktopTbody.innerHTML = items.map(item => {
-    const isOwner = item.solicitante.toLowerCase() === state.currentUserEmail.toLowerCase();
+    const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
+    // CONTROL DE SEGURIDAD ESTRICTO: isOwner es TRUE ÚNICAMENTE si coincide el correo exacto
+    const isOwner = (itemSolicitanteClean === currentEmailClean) && (currentEmailClean !== '');
     const isReembolsado = item.estado === 'Reembolsado';
 
     const hasSustento = item.sustentoUrl || item.sustentoNombre || item.sustentoBase64;
@@ -407,7 +389,8 @@ function renderDataView(items) {
   }).join('');
 
   mobileCards.innerHTML = items.map(item => {
-    const isOwner = item.solicitante.toLowerCase() === state.currentUserEmail.toLowerCase();
+    const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
+    const isOwner = (itemSolicitanteClean === currentEmailClean) && (currentEmailClean !== '');
     const isReembolsado = item.estado === 'Reembolsado';
 
     const hasSustento = item.sustentoUrl || item.sustentoNombre || item.sustentoBase64;
@@ -466,7 +449,10 @@ function openModalEliminar(id) {
   const item = state.solicitudes.find(s => s.id === id);
   if (!item) return;
 
-  if (item.solicitante.toLowerCase() !== state.currentUserEmail.toLowerCase()) {
+  const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
+  const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
+
+  if (itemSolicitanteClean !== currentEmailClean) {
     showToast('Solo puedes eliminar tus propios reembolsos.', 'error');
     return;
   }
@@ -487,7 +473,10 @@ function confirmarEliminarPropio() {
   const targetId = state.selectedEliminarId;
   const item = state.solicitudes.find(s => s.id === targetId);
 
-  if (!item || item.solicitante.toLowerCase() !== state.currentUserEmail.toLowerCase()) {
+  const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
+  const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
+
+  if (!item || itemSolicitanteClean !== currentEmailClean) {
     showToast('No tienes permiso para eliminar esta solicitud.', 'error');
     closeModalEliminar();
     return;
@@ -501,7 +490,6 @@ function confirmarEliminarPropio() {
   closeModalEliminar();
   showToast('Solicitud eliminada correctamente.', 'success');
 
-  // Envío seguro en formato text/plain para evitar bloqueos CORS
   fetch(API_URL, {
     method: 'POST',
     mode: 'no-cors',
@@ -613,7 +601,10 @@ function openModalSolicitud(data = null) {
 
     seccionValidacion.classList.remove('hidden');
 
-    const isOwner = data.solicitante.toLowerCase() === state.currentUserEmail.toLowerCase();
+    const itemSolicitanteClean = (data.solicitante || '').toLowerCase().trim();
+    const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
+    const isOwner = (itemSolicitanteClean === currentEmailClean) && (currentEmailClean !== '');
+
     ['formFecha', 'formCategoria', 'formMonto', 'formDetalle'].forEach(fieldId => {
       document.getElementById(fieldId).disabled = !isOwner;
     });
@@ -742,6 +733,8 @@ function handleSaveSolicitud(e) {
   const existingId = document.getElementById('formId').value;
   const recordId = (existingId && existingId.trim() !== '') ? existingId.trim() : generateUniqueId();
 
+  const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
+
   const sustentoNombre = state.selectedFileObject 
     ? state.selectedFileObject.fileName 
     : (document.getElementById('formSustentoNombre').value || '');
@@ -751,7 +744,7 @@ function handleSaveSolicitud(e) {
   const newRecord = {
     id: recordId,
     fecha: document.getElementById('formFecha').value,
-    solicitante: document.getElementById('formSolicitante').value,
+    solicitante: currentEmailClean, // Garantiza que se guarde el correo verificado del usuario activo
     categoria: document.getElementById('formCategoria').value,
     monto: parseFloat(document.getElementById('formMonto').value) || 0.00,
     detalle: document.getElementById('formDetalle').value,
@@ -762,7 +755,6 @@ function handleSaveSolicitud(e) {
     validadoPor: document.getElementById('formValidadoPor').value || ''
   };
 
-  // 1. RENDERIZADO INSTANTÁNEO Y PERSISTENCIA LOCAL EN NAVEGADOR
   const existingIndex = state.solicitudes.findIndex(s => s.id === recordId);
   if (existingIndex >= 0) {
     state.solicitudes[existingIndex] = newRecord;
@@ -780,7 +772,6 @@ function handleSaveSolicitud(e) {
   btnSave.disabled = false;
   btnSave.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i> Guardar Solicitud`;
 
-  // 2. ENVÍO COMPATIBLE 100% CON GOOGLE APPS SCRIPT (Sin bloqueos CORS)
   const formData = {
     ...newRecord,
     fileObject: state.selectedFileObject
@@ -791,7 +782,7 @@ function handleSaveSolicitud(e) {
     mode: 'no-cors',
     body: JSON.stringify({ action: 'saveSolicitud', data: formData })
   }).then(() => {
-    setTimeout(() => fetchSolicitudesFromAPI(false), 2000);
+    setTimeout(() => fetchSolicitudesFromAPI(false), 1500);
   }).catch(() => {});
 }
 
