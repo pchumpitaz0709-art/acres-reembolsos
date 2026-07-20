@@ -1,12 +1,12 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Autenticación 100% Google OAuth 2.0 con Visor de Fotos Integrado y Sincronización en Tiempo Real
+ * Autenticación 100% Google OAuth 2.0 con Sincronización Multiusuario en Tiempo Real
  * ==============================================================================
  */
 
-// PEGA AQUÍ LA URL DE TU WEB APP DE APPS SCRIPT (Web App API Endpoint):
-const API_URL = 'https://script.google.com/macros/s/AKfycbxFP3uWun_vOxgqXYoHKHJ7JwniOrDqWReOeKJa_Kz7wIBDxsdo11A4h2AdhOWCUY1a/exec';
+// URL AUTÉNTICA DE TU GOOGLE APPS SCRIPT DATABASE API:
+const API_URL = 'https://script.google.com/macros/s/AKfycbyDn1wgSqxdE7aQ_SNTCOjSSP7K-lu1rYNb8lG5FyRL9D06ZNjI0XbBoYmBj27Nhbf4/exec';
 
 let state = {
   currentUserEmail: '',
