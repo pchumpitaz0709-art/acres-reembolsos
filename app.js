@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Autenticación 100% Google OAuth 2.0 con Control Estricto de Pertenencia por Correo
+ * Autenticación 100% Google OAuth 2.0 con Fusión Fluida Sin Parpadeos
  * ==============================================================================
  */
 
@@ -111,7 +111,7 @@ function logoutApp() {
   if (autoSyncInterval) clearInterval(autoSyncInterval);
   localStorage.removeItem('acres_user_email');
   localStorage.removeItem('acres_user_picture');
-  localStorage.removeItem('acres_cached_solicitudes'); // Limpia caché local al cerrar sesión para cambiar de cuenta limpiamente
+  localStorage.removeItem('acres_cached_solicitudes');
   state.currentUserEmail = '';
   state.currentUserPicture = '';
   state.solicitudes = [];
@@ -178,7 +178,7 @@ function setTheme(theme) {
 }
 
 /* ==========================================
-   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN EN TIEMPO REAL
+   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN EN TIEMPO REAL SIN PARPADEOS
    ========================================== */
 function startAutoSync() {
   if (autoSyncInterval) clearInterval(autoSyncInterval);
@@ -200,9 +200,32 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
       if (syncBtnIcon) syncBtnIcon.classList.remove('animate-spin');
 
       if (response && Array.isArray(response.solicitudes)) {
-        // La fuente de verdad absoluta es el servidor central de Google Sheets
-        state.solicitudes = response.solicitudes;
-        localStorage.setItem('acres_cached_solicitudes', JSON.stringify(response.solicitudes));
+        const remoteList = response.solicitudes;
+        const currentList = state.solicitudes;
+
+        // Fusión perfecta: Mapa indexado por ID
+        const mergedMap = new Map();
+
+        // 1. Agregar registros que están en el estado actual (para conservar los recién creados)
+        currentList.forEach(item => {
+          if (item && item.id) mergedMap.set(item.id, item);
+        });
+
+        // 2. Sobrescribir con los registros remotos del servidor (que traen la URL real de Drive)
+        remoteList.forEach(item => {
+          if (item && item.id) {
+            const existing = mergedMap.get(item.id);
+            // Conservar sustento base64 si el remoto aún no terminó de procesar
+            if (existing && existing.sustentoBase64 && !item.sustentoUrl) {
+              item.sustentoBase64 = existing.sustentoBase64;
+            }
+            mergedMap.set(item.id, item);
+          }
+        });
+
+        const mergedArray = Array.from(mergedMap.values());
+        state.solicitudes = mergedArray;
+        localStorage.setItem('acres_cached_solicitudes', JSON.stringify(mergedArray));
         updateKPIs();
         applyFilters();
       }
@@ -331,7 +354,6 @@ function renderDataView(items) {
 
   desktopTbody.innerHTML = items.map(item => {
     const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
-    // CONTROL DE SEGURIDAD ESTRICTO: isOwner es TRUE ÚNICAMENTE si coincide el correo exacto
     const isOwner = (itemSolicitanteClean === currentEmailClean) && (currentEmailClean !== '');
     const isReembolsado = item.estado === 'Reembolsado';
 
@@ -499,7 +521,7 @@ function confirmarEliminarPropio() {
       userEmail: state.currentUserEmail
     })
   }).then(() => {
-    setTimeout(() => fetchSolicitudesFromAPI(false), 1500);
+    setTimeout(() => fetchSolicitudesFromAPI(false), 4000);
   }).catch(() => {});
 }
 
@@ -571,7 +593,7 @@ function formatCurrency(num) {
 }
 
 /* ==========================================
-   7. COMPRESIÓN DE FOTOS Y FORMULARIOS CON ENVÍO SEGURO
+   7. COMPRESIÓN DE FOTOS Y FORMULARIOS CON FUSIÓN SIN PARPADEOS
    ========================================== */
 function openModalSolicitud(data = null) {
   const modal = document.getElementById('modalSolicitud');
@@ -744,7 +766,7 @@ function handleSaveSolicitud(e) {
   const newRecord = {
     id: recordId,
     fecha: document.getElementById('formFecha').value,
-    solicitante: currentEmailClean, // Garantiza que se guarde el correo verificado del usuario activo
+    solicitante: currentEmailClean,
     categoria: document.getElementById('formCategoria').value,
     monto: parseFloat(document.getElementById('formMonto').value) || 0.00,
     detalle: document.getElementById('formDetalle').value,
@@ -755,6 +777,7 @@ function handleSaveSolicitud(e) {
     validadoPor: document.getElementById('formValidadoPor').value || ''
   };
 
+  // 1. RENDERIZADO INSTANTÁNEO EN MEMORIA
   const existingIndex = state.solicitudes.findIndex(s => s.id === recordId);
   if (existingIndex >= 0) {
     state.solicitudes[existingIndex] = newRecord;
@@ -772,6 +795,7 @@ function handleSaveSolicitud(e) {
   btnSave.disabled = false;
   btnSave.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i> Guardar Solicitud`;
 
+  // 2. ENVÍO A GOOGLE SHEETS
   const formData = {
     ...newRecord,
     fileObject: state.selectedFileObject
@@ -782,7 +806,8 @@ function handleSaveSolicitud(e) {
     mode: 'no-cors',
     body: JSON.stringify({ action: 'saveSolicitud', data: formData })
   }).then(() => {
-    setTimeout(() => fetchSolicitudesFromAPI(false), 1500);
+    // Sincroniza tras dar 4s para que Google Sheets termine de procesar en background
+    setTimeout(() => fetchSolicitudesFromAPI(false), 4000);
   }).catch(() => {});
 }
 
