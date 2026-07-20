@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Autenticación 100% Google OAuth 2.0 con Base de Datos Global Unificada Multiusuario
+ * Autenticación 100% Google OAuth 2.0 con Fusión Robusta Anti-Pérdidas Multiusuario
  * ==============================================================================
  */
 
@@ -183,13 +183,27 @@ function startAutoSync() {
   if (autoSyncInterval) clearInterval(autoSyncInterval);
   autoSyncInterval = setInterval(() => {
     fetchSolicitudesFromAPI(false);
-  }, 5000); // Consulta la base de datos central cada 5 segundos
+  }, 6000);
 }
 
 function fetchSolicitudesFromAPI(showSpinner = true) {
   const syncBtnIcon = document.getElementById('syncSpinner');
   if (showSpinner && syncBtnIcon) {
     syncBtnIcon.classList.add('animate-spin');
+  }
+
+  // Cargar caché local primero
+  const cachedData = localStorage.getItem('acres_cached_solicitudes');
+  let localList = [];
+  if (cachedData) {
+    try {
+      localList = JSON.parse(cachedData) || [];
+      if (state.solicitudes.length === 0) {
+        state.solicitudes = localList;
+        updateKPIs();
+        applyFilters();
+      }
+    } catch (e) {}
   }
 
   fetch(API_URL + '?action=getData&t=' + Date.now())
@@ -199,9 +213,24 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
       if (syncBtnIcon) syncBtnIcon.classList.remove('animate-spin');
 
       if (response && Array.isArray(response.solicitudes)) {
-        // Fusión global: sustituir lista con la base de datos central de Google Sheets
-        state.solicitudes = response.solicitudes;
-        localStorage.setItem('acres_cached_solicitudes', JSON.stringify(response.solicitudes));
+        // Fusión inteligente: combinar registros remotos con locales para que NADA se borre al presionar F5
+        const mergedMap = new Map();
+        
+        // Agregar registros remotos del servidor
+        response.solicitudes.forEach(item => {
+          if (item && item.id) mergedMap.set(item.id, item);
+        });
+
+        // Preservar registros locales que aún estén sincronizando
+        localList.forEach(item => {
+          if (item && item.id && !mergedMap.has(item.id)) {
+            mergedMap.set(item.id, item);
+          }
+        });
+
+        const mergedArray = Array.from(mergedMap.values());
+        state.solicitudes = mergedArray;
+        localStorage.setItem('acres_cached_solicitudes', JSON.stringify(mergedArray));
         updateKPIs();
         applyFilters();
       }
@@ -472,10 +501,10 @@ function confirmarEliminarPropio() {
   closeModalEliminar();
   showToast('Solicitud eliminada correctamente.', 'success');
 
+  // Envío seguro en formato text/plain para evitar bloqueos CORS
   fetch(API_URL, {
     method: 'POST',
     mode: 'no-cors',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       action: 'deleteSolicitud',
       id: targetId,
@@ -554,7 +583,7 @@ function formatCurrency(num) {
 }
 
 /* ==========================================
-   7. COMPRESIÓN DE FOTOS Y FORMULARIOS
+   7. COMPRESIÓN DE FOTOS Y FORMULARIOS CON ENVÍO SEGURO
    ========================================== */
 function openModalSolicitud(data = null) {
   const modal = document.getElementById('modalSolicitud');
@@ -733,6 +762,7 @@ function handleSaveSolicitud(e) {
     validadoPor: document.getElementById('formValidadoPor').value || ''
   };
 
+  // 1. RENDERIZADO INSTANTÁNEO Y PERSISTENCIA LOCAL EN NAVEGADOR
   const existingIndex = state.solicitudes.findIndex(s => s.id === recordId);
   if (existingIndex >= 0) {
     state.solicitudes[existingIndex] = newRecord;
@@ -745,11 +775,12 @@ function handleSaveSolicitud(e) {
   applyFilters();
 
   closeModalSolicitud();
-  showToast('Solicitud y sustento guardados correctamente.', 'success');
+  showToast('Solicitud guardada correctamente.', 'success');
 
   btnSave.disabled = false;
   btnSave.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i> Guardar Solicitud`;
 
+  // 2. ENVÍO COMPATIBLE 100% CON GOOGLE APPS SCRIPT (Sin bloqueos CORS)
   const formData = {
     ...newRecord,
     fileObject: state.selectedFileObject
@@ -758,10 +789,9 @@ function handleSaveSolicitud(e) {
   fetch(API_URL, {
     method: 'POST',
     mode: 'no-cors',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'saveSolicitud', data: formData })
   }).then(() => {
-    setTimeout(() => fetchSolicitudesFromAPI(false), 1500);
+    setTimeout(() => fetchSolicitudesFromAPI(false), 2000);
   }).catch(() => {});
 }
 
@@ -798,7 +828,6 @@ function confirmarAprobacion() {
   fetch(API_URL, {
     method: 'POST',
     mode: 'no-cors',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       action: 'updateStatus',
       id: state.selectedAprobacionId,
