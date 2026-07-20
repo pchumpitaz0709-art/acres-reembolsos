@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Autenticación 100% Google OAuth 2.0 con Sincronización Multiusuario en Tiempo Real
+ * Autenticación 100% Google OAuth 2.0 con Visor de Fotos Integrado y Sincronización en Tiempo Real
  * ==============================================================================
  */
 
@@ -181,7 +181,6 @@ function setTheme(theme) {
    ========================================== */
 function startAutoSync() {
   if (autoSyncInterval) clearInterval(autoSyncInterval);
-  // Auto-refresca cada 10 segundos silenciosamente
   autoSyncInterval = setInterval(() => {
     fetchSolicitudesFromAPI(false);
   }, 10000);
@@ -259,11 +258,10 @@ function applyFilters() {
       return false;
     }
     if (searchText !== '') {
-      const matchId = item.id.toLowerCase().includes(searchText);
       const matchSolicitante = item.solicitante.toLowerCase().includes(searchText);
       const matchDetalle = item.detalle.toLowerCase().includes(searchText);
       const matchValidado = item.validadoPor.toLowerCase().includes(searchText);
-      if (!matchId && !matchSolicitante && !matchDetalle && !matchValidado) {
+      if (!matchSolicitante && !matchDetalle && !matchValidado) {
         return false;
       }
     }
@@ -313,6 +311,9 @@ function updateKPIs() {
   document.getElementById('kpiMisSolicitudesCount').textContent = `${misCount} registradas mías`;
 }
 
+/* ==========================================
+   VISTA DE TABLA (SIN COLUMNA ID, FECHA PRIMERA Y DETALLE SEGUNDO)
+   ========================================== */
 function renderDataView(items) {
   const desktopTbody = document.getElementById('desktopTableBody');
   const mobileCards = document.getElementById('mobileCardView');
@@ -335,38 +336,39 @@ function renderDataView(items) {
     const isReembolsado = item.estado === 'Reembolsado';
 
     const hasSustento = item.sustentoUrl || item.sustentoNombre || item.sustentoBase64;
-    const sustentoLink = item.sustentoUrl || item.sustentoBase64 || '#';
 
     const sustentoBtnHtml = hasSustento 
-      ? `<a href="${sustentoLink}" target="_blank" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50 hover:bg-emerald-100 transition-all">
+      ? `<button onclick="openModalVisorSustento('${item.id}')" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50 hover:bg-emerald-100 transition-all">
           <i data-lucide="paperclip" class="w-3.5 h-3.5"></i>
-          <span class="max-w-[110px] truncate">${item.sustentoNombre || 'Ver Foto'}</span>
-         </a>`
+          <span class="max-w-[120px] truncate">${item.sustentoNombre || 'Ver Comprobante'}</span>
+         </button>`
       : `<span class="text-xs text-slate-400 italic">Sin sustento</span>`;
 
     return `
       <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-900/50 transition-colors">
-        <td class="py-3 px-4 font-mono text-xs font-bold text-slate-700 dark:text-slate-300">${item.id}</td>
-        <td class="py-3 px-4 text-xs whitespace-nowrap text-slate-600 dark:text-slate-400">${item.fecha}</td>
-        <td class="py-3 px-4 text-xs font-medium text-slate-800 dark:text-slate-200">
+        <td class="py-3.5 px-4 text-xs font-semibold whitespace-nowrap text-slate-700 dark:text-slate-300">${item.fecha}</td>
+        <td class="py-3.5 px-4 text-xs font-medium text-slate-900 dark:text-white max-w-[220px]">
+          <div class="line-clamp-2">${item.detalle}</div>
+        </td>
+        <td class="py-3.5 px-4 text-xs font-medium text-slate-800 dark:text-slate-200">
           <div class="flex items-center gap-1.5">
             <span>${item.solicitante}</span>
             ${isOwner ? `<span class="text-[10px] px-1.5 py-0.2 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold">TÚ</span>` : ''}
           </div>
         </td>
-        <td class="py-3 px-4 text-xs font-semibold text-slate-700 dark:text-slate-300">${getCategoriaChip(item.categoria)}</td>
-        <td class="py-3 px-4 text-xs font-bold text-right text-slate-900 dark:text-white font-mono">${formatCurrency(item.monto)}</td>
-        <td class="py-3 px-4">${sustentoBtnHtml}</td>
-        <td class="py-3 px-4">
+        <td class="py-3.5 px-4 text-xs font-semibold text-slate-700 dark:text-slate-300">${getCategoriaChip(item.categoria)}</td>
+        <td class="py-3.5 px-4 text-xs font-bold text-right text-slate-900 dark:text-white font-mono">${formatCurrency(item.monto)}</td>
+        <td class="py-3.5 px-4">${sustentoBtnHtml}</td>
+        <td class="py-3.5 px-4">
           <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${isReembolsado ? 'badge-reembolsado' : 'badge-pendiente'}">
             <span class="w-1.5 h-1.5 rounded-full ${isReembolsado ? 'bg-emerald-500' : 'bg-amber-500'}"></span>
             ${item.estado}
           </span>
         </td>
-        <td class="py-3 px-4 text-xs text-slate-600 dark:text-slate-400">
+        <td class="py-3.5 px-4 text-xs text-slate-600 dark:text-slate-400">
           ${item.validadoPor ? `<span class="font-medium text-slate-700 dark:text-slate-300">${item.validadoPor}</span>` : `<span class="text-slate-400 italic">No validado</span>`}
         </td>
-        <td class="py-3 px-4 text-center">
+        <td class="py-3.5 px-4 text-center">
           <div class="flex items-center justify-center gap-1">
             ${isOwner ? `
               <button onclick="editSolicitud('${item.id}')" title="Editar mi solicitud" class="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all">
@@ -388,23 +390,19 @@ function renderDataView(items) {
     const isReembolsado = item.estado === 'Reembolsado';
 
     const hasSustento = item.sustentoUrl || item.sustentoNombre || item.sustentoBase64;
-    const sustentoLink = item.sustentoUrl || item.sustentoBase64 || '#';
 
     return `
       <div class="glass-card rounded-2xl p-4 space-y-3 shadow-sm border border-slate-200 dark:border-slate-800">
         <div class="flex items-center justify-between">
-          <span class="font-mono text-xs font-bold text-acres-600 dark:text-acres-400">${item.id}</span>
+          <span class="text-xs font-bold text-slate-600 dark:text-slate-300">${item.fecha} • ${getCategoriaChip(item.categoria)}</span>
           <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold ${isReembolsado ? 'badge-reembolsado' : 'badge-pendiente'}">
             ${item.estado}
           </span>
         </div>
 
-        <div class="flex items-baseline justify-between">
-          <div>
-            <p class="text-xs text-slate-500 dark:text-slate-400">${item.fecha} • ${item.categoria}</p>
-            <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-100 line-clamp-1">${item.detalle}</h4>
-          </div>
-          <span class="text-base font-bold text-slate-900 dark:text-white font-mono">${formatCurrency(item.monto)}</span>
+        <div class="flex items-baseline justify-between gap-2">
+          <h4 class="text-sm font-semibold text-slate-900 dark:text-slate-100 line-clamp-2">${item.detalle}</h4>
+          <span class="text-base font-bold text-slate-900 dark:text-white font-mono flex-shrink-0">${formatCurrency(item.monto)}</span>
         </div>
 
         <div class="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
@@ -412,10 +410,10 @@ function renderDataView(items) {
           
           <div class="flex items-center gap-2">
             ${hasSustento ? `
-              <a href="${sustentoLink}" target="_blank" class="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-300 font-semibold text-xs flex items-center gap-1">
+              <button onclick="openModalVisorSustento('${item.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-semibold text-xs flex items-center gap-1">
                 <i data-lucide="paperclip" class="w-3.5 h-3.5"></i>
-                <span>Sustento</span>
-              </a>
+                <span>Ver Foto</span>
+              </button>
             ` : ''}
 
             ${isOwner ? `
@@ -437,6 +435,59 @@ function renderDataView(items) {
   lucide.createIcons();
 }
 
+/* ==========================================
+   5. VISOR EN PANTALLA COMPLETA PARA SUSTENTOS (FOTOS / PDF)
+   ========================================== */
+function openModalVisorSustento(id) {
+  const item = state.solicitudes.find(s => s.id === id);
+  if (!item) return;
+
+  const modal = document.getElementById('modalVisorSustento');
+  const title = document.getElementById('visorSustentoTitle');
+  const imgDisplay = document.getElementById('visorImageDisplay');
+  const pdfDisplay = document.getElementById('visorPdfDisplay');
+  const fallbackText = document.getElementById('visorFallbackText');
+  const downloadLink = document.getElementById('visorDownloadLink');
+  const driveBtn = document.getElementById('visorDriveDirectBtn');
+
+  title.textContent = item.sustentoNombre || `Sustento de Gasto - ${item.fecha}`;
+
+  const sourceUrl = item.sustentoBase64 || item.sustentoUrl || '';
+
+  imgDisplay.classList.add('hidden');
+  pdfDisplay.classList.add('hidden');
+  fallbackText.classList.add('hidden');
+
+  downloadLink.href = sourceUrl;
+  downloadLink.setAttribute('download', item.sustentoNombre || 'comprobante.jpg');
+
+  if (sourceUrl.startsWith('data:image/') || sourceUrl.match(/\.(jpeg|jpg|png|gif|webp)($|\?)/i)) {
+    imgDisplay.src = sourceUrl;
+    imgDisplay.classList.remove('hidden');
+  } else if (sourceUrl.startsWith('data:application/pdf') || sourceUrl.endsWith('.pdf')) {
+    pdfDisplay.src = sourceUrl;
+    pdfDisplay.classList.remove('hidden');
+  } else if (sourceUrl.includes('drive.google.com') || sourceUrl.includes('google.com')) {
+    driveBtn.href = sourceUrl;
+    fallbackText.classList.remove('hidden');
+  } else if (sourceUrl !== '') {
+    imgDisplay.src = sourceUrl;
+    imgDisplay.classList.remove('hidden');
+  } else {
+    fallbackText.classList.remove('hidden');
+  }
+
+  modal.classList.remove('hidden');
+  lucide.createIcons();
+}
+
+function closeModalVisorSustento() {
+  const modal = document.getElementById('modalVisorSustento');
+  document.getElementById('visorImageDisplay').src = '';
+  document.getElementById('visorPdfDisplay').src = '';
+  modal.classList.add('hidden');
+}
+
 function getCategoriaChip(cat) {
   const map = {
     'Movilidad': '🚗 Movilidad',
@@ -452,7 +503,7 @@ function formatCurrency(num) {
 }
 
 /* ==========================================
-   5. COMPRESIÓN DE FOTOS Y FORMULARIOS
+   6. COMPRESIÓN DE FOTOS Y FORMULARIOS
    ========================================== */
 function openModalSolicitud(data = null) {
   const modal = document.getElementById('modalSolicitud');
@@ -464,7 +515,7 @@ function openModalSolicitud(data = null) {
   clearSelectedFile();
 
   if (data) {
-    title.textContent = `Editar Solicitud ${data.id}`;
+    title.textContent = `Editar Solicitud (${data.fecha})`;
     document.getElementById('formId').value = data.id;
     document.getElementById('formFecha').value = data.fecha;
     document.getElementById('formSolicitante').value = data.solicitante;
@@ -631,7 +682,7 @@ function handleSaveSolicitud(e) {
     validadoPor: document.getElementById('formValidadoPor').value || ''
   };
 
-  // 1. RENDERIZADO OPTIMISTA INSTANTÁNEO Y PRESERVACIÓN DE FOTO (< 0.1s)
+  // 1. RENDERIZADO OPTIMISTA INSTANTÁNEO Y VISUALIZACIÓN DIRECTA (< 0.1s)
   const existingIndex = state.solicitudes.findIndex(s => s.id === recordId);
   if (existingIndex >= 0) {
     state.solicitudes[existingIndex] = newRecord;
@@ -661,7 +712,6 @@ function handleSaveSolicitud(e) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'saveSolicitud', data: formData })
   }).then(() => {
-    // Re-sincroniza tras guardar en Drive
     setTimeout(() => fetchSolicitudesFromAPI(false), 2500);
   }).catch(() => {});
 }
