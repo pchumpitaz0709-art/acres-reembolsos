@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Autenticación 100% Google OAuth 2.0 con Eliminación Exclusiva de Registros Propios
+ * Autenticación 100% Google OAuth 2.0 con Base de Datos Global Unificada Multiusuario
  * ==============================================================================
  */
 
@@ -35,7 +35,6 @@ function handleGoogleSignInResponse(response) {
     return;
   }
 
-  // Decodificar payload del token JWT de Google
   const payload = parseJwt(response.credential);
   if (payload && payload.email) {
     const verifiedEmail = payload.email.toLowerCase().trim();
@@ -184,7 +183,7 @@ function startAutoSync() {
   if (autoSyncInterval) clearInterval(autoSyncInterval);
   autoSyncInterval = setInterval(() => {
     fetchSolicitudesFromAPI(false);
-  }, 10000);
+  }, 5000); // Consulta la base de datos central cada 5 segundos
 }
 
 function fetchSolicitudesFromAPI(showSpinner = true) {
@@ -193,22 +192,14 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
     syncBtnIcon.classList.add('animate-spin');
   }
 
-  const cachedData = localStorage.getItem('acres_cached_solicitudes');
-  if (cachedData && state.solicitudes.length === 0) {
-    try {
-      state.solicitudes = JSON.parse(cachedData);
-      updateKPIs();
-      applyFilters();
-    } catch (e) {}
-  }
-
-  fetch(API_URL + '?action=getData')
+  fetch(API_URL + '?action=getData&t=' + Date.now())
     .then(res => res.json())
     .then(response => {
       showLoading(false);
       if (syncBtnIcon) syncBtnIcon.classList.remove('animate-spin');
 
-      if (response && response.solicitudes) {
+      if (response && Array.isArray(response.solicitudes)) {
+        // Fusión global: sustituir lista con la base de datos central de Google Sheets
         state.solicitudes = response.solicitudes;
         localStorage.setItem('acres_cached_solicitudes', JSON.stringify(response.solicitudes));
         updateKPIs();
@@ -218,9 +209,6 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
     .catch(err => {
       showLoading(false);
       if (syncBtnIcon) syncBtnIcon.classList.remove('animate-spin');
-      if (!state.solicitudes) state.solicitudes = [];
-      updateKPIs();
-      applyFilters();
     });
 }
 
@@ -449,7 +437,6 @@ function openModalEliminar(id) {
   const item = state.solicitudes.find(s => s.id === id);
   if (!item) return;
 
-  // VERIFICACIÓN DE SEGURIDAD EXCLUSIVA POR CUENTA
   if (item.solicitante.toLowerCase() !== state.currentUserEmail.toLowerCase()) {
     showToast('Solo puedes eliminar tus propios reembolsos.', 'error');
     return;
@@ -477,7 +464,6 @@ function confirmarEliminarPropio() {
     return;
   }
 
-  // 1. ELIMINACIÓN INSTANTÁNEA EN PANTALLA Y LOCALSTORAGE (< 0.1s)
   state.solicitudes = state.solicitudes.filter(s => s.id !== targetId);
   localStorage.setItem('acres_cached_solicitudes', JSON.stringify(state.solicitudes));
   updateKPIs();
@@ -486,7 +472,6 @@ function confirmarEliminarPropio() {
   closeModalEliminar();
   showToast('Solicitud eliminada correctamente.', 'success');
 
-  // 2. ELIMINACIÓN EN SEGUNDO PLANO EN GOOGLE SHEETS
   fetch(API_URL, {
     method: 'POST',
     mode: 'no-cors',
@@ -497,7 +482,7 @@ function confirmarEliminarPropio() {
       userEmail: state.currentUserEmail
     })
   }).then(() => {
-    setTimeout(() => fetchSolicitudesFromAPI(false), 2000);
+    setTimeout(() => fetchSolicitudesFromAPI(false), 1500);
   }).catch(() => {});
 }
 
@@ -748,7 +733,6 @@ function handleSaveSolicitud(e) {
     validadoPor: document.getElementById('formValidadoPor').value || ''
   };
 
-  // 1. RENDERIZADO OPTIMISTA INSTANTÁNEO Y VISUALIZACIÓN DIRECTA (< 0.1s)
   const existingIndex = state.solicitudes.findIndex(s => s.id === recordId);
   if (existingIndex >= 0) {
     state.solicitudes[existingIndex] = newRecord;
@@ -766,7 +750,6 @@ function handleSaveSolicitud(e) {
   btnSave.disabled = false;
   btnSave.innerHTML = `<i data-lucide="save" class="w-4 h-4"></i> Guardar Solicitud`;
 
-  // 2. SINCRONIZACIÓN EN SEGUNDO PLANO CON GOOGLE SHEETS & DRIVE
   const formData = {
     ...newRecord,
     fileObject: state.selectedFileObject
@@ -778,7 +761,7 @@ function handleSaveSolicitud(e) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'saveSolicitud', data: formData })
   }).then(() => {
-    setTimeout(() => fetchSolicitudesFromAPI(false), 2500);
+    setTimeout(() => fetchSolicitudesFromAPI(false), 1500);
   }).catch(() => {});
 }
 
