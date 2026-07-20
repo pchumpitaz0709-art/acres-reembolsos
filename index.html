@@ -30,12 +30,16 @@
   </script>
   <!-- LUCIDE ICONS CDN -->
   <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- GOOGLE IDENTITY SERVICES (OFFICIAL GOOGLE SIGN-IN SDK) -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 min-h-screen antialiased flex flex-col selection:bg-acres-500 selection:text-white">
 
   <!-- ============================================================================== -->
-  <!-- 1. PANTALLA DE INICIO DE SESIÓN CORPORATIVO ACRES -->
+  <!-- 1. PANTALLA DE INICIO DE SESIÓN ACRES CON GOOGLE OAUTH 2.0 OFICIAL -->
   <!-- ============================================================================== -->
   <div id="loginScreen" class="fixed inset-0 z-50 bg-gradient-to-br from-slate-900 via-acres-900 to-slate-950 flex items-center justify-center p-4">
     <div class="glass-card w-full max-w-md rounded-3xl p-8 shadow-2xl border border-slate-700/60 backdrop-blur-2xl text-center space-y-6 animate-fade-in relative overflow-hidden">
@@ -52,25 +56,55 @@
       </div>
 
       <div class="relative z-10 space-y-4 pt-2">
+        <p class="text-xs font-semibold text-slate-300">Autentícate de forma segura con tu cuenta de Google</p>
+        
+        <!-- BOTÓN OFICIAL DE GOOGLE CON ID DE CLIENTE AUTÉNTICO -->
+        <div class="flex justify-center" id="g_id_onload_container">
+          <div id="g_id_onload"
+               data-client_id="497764081133-e8h0hh9t0lcaq955p8qmqcvm76l5fc58.apps.googleusercontent.com"
+               data-context="signin"
+               data-ux_mode="popup"
+               data-callback="handleGoogleSignInResponse"
+               data-auto_prompt="false">
+          </div>
+
+          <div class="g_id_signin"
+               data-type="standard"
+               data-shape="pill"
+               data-theme="filled_blue"
+               data-text="signin_with"
+               data-size="large"
+               data-logo_alignment="left"
+               data-width="320">
+          </div>
+        </div>
+
+        <!-- DIVIDER -->
+        <div class="flex items-center gap-3 my-4">
+          <div class="flex-grow h-px bg-slate-700/60"></div>
+          <span class="text-[11px] text-slate-500 uppercase font-semibold">o ingresar con correo</span>
+          <div class="flex-grow h-px bg-slate-700/60"></div>
+        </div>
+
+        <!-- FORMULARIO MANUAL DE CORREO -->
         <form id="loginForm" onsubmit="handleLoginSubmit(event)" class="space-y-4 text-left">
           <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Ingresa tu Correo Corporativo</label>
+            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Correo Corporativo</label>
             <div class="relative">
               <i data-lucide="mail" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
               <input type="email" id="loginEmailInput" required placeholder="tu.nombre@acres.com" class="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-acres-500 transition-all font-mono">
             </div>
-            <p class="text-[11px] text-slate-400 mt-1.5">Cada usuario se registra y gestiona sus reembolsos independientemente.</p>
           </div>
 
-          <button type="submit" class="w-full py-3 px-4 bg-gradient-to-r from-acres-600 to-acres-500 hover:from-acres-700 hover:to-acres-600 text-white font-semibold text-sm rounded-xl shadow-lg shadow-acres-500/30 transition-all flex items-center justify-center gap-2">
-            <span>Iniciar Sesión Corporativa</span>
+          <button type="submit" class="w-full py-3 px-4 bg-slate-800 hover:bg-slate-700 text-white font-semibold text-sm rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-2">
+            <span>Ingresar con Correo</span>
             <i data-lucide="arrow-right" class="w-4 h-4"></i>
           </button>
         </form>
       </div>
 
       <div class="relative z-10 pt-4 border-t border-slate-800/80 text-center">
-        <p class="text-[11px] text-slate-500">ACRES Finance © 2026 • Plataforma de Control Presupuestal</p>
+        <p class="text-[11px] text-slate-500">ACRES Finance © 2026 • Autenticación Oficial Google OAuth 2.0</p>
       </div>
     </div>
   </div>
@@ -108,7 +142,7 @@
                 <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-none truncate max-w-[160px]" id="userEmailDisplay">
                   usuario@acres.com
                 </p>
-                <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium leading-none">Sesión Activa</span>
+                <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium leading-none">Sesión Google Verificada</span>
               </div>
               <i data-lucide="chevron-down" id="dropdownChevron" class="w-3.5 h-3.5 text-slate-400 transition-transform"></i>
             </button>
