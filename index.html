@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="es" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ACRES | Gestión de Reembolsos</title>
+  
+  <!-- TAILWIND CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            acres: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0284c7',
+              600: '#0369a1',
+              700: '#075985',
+              800: '#074e7c',
+              900: '#0f172a',
+              accent: '#10b981'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- LUCIDE ICONS CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- GOOGLE IDENTITY SERVICES (OFFICIAL GOOGLE SIGN-IN SDK) -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 min-h-screen antialiased flex flex-col selection:bg-acres-500 selection:text-white">
+
+  <!-- ============================================================================== -->
+  <!-- 1. PANTALLA DE INICIO DE SESIÓN ACRES (EXCLUSIVAMENTE CON GOOGLE/GMAIL) -->
+  <!-- ============================================================================== -->
+  <div id="loginScreen" class="fixed inset-0 z-50 bg-gradient-to-br from-slate-900 via-acres-900 to-slate-950 flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-md rounded-3xl p-8 shadow-2xl border border-slate-700/60 backdrop-blur-2xl text-center space-y-6 animate-fade-in relative overflow-hidden">
+      <!-- Glow background decoration -->
+      <div class="absolute -top-20 -left-20 w-40 h-40 bg-acres-500/20 rounded-full blur-3xl"></div>
+      <div class="absolute -bottom-20 -right-20 w-40 h-40 bg-emerald-500/20 rounded-full blur-3xl"></div>
+
+      <div class="relative z-10 space-y-3">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-acres-600 to-emerald-400 flex items-center justify-center text-white mx-auto shadow-xl shadow-acres-500/30">
+          <i data-lucide="receipt" class="w-8 h-8"></i>
+        </div>
+        <h1 class="text-3xl font-bold font-heading text-white tracking-tight">ACRES</h1>
+        <p class="text-xs text-slate-400 font-medium">Sistema Corporativo de Reembolsos de Gastos</p>
+      </div>
+
+      <div class="relative z-10 space-y-4 pt-2">
+        <p class="text-xs font-semibold text-slate-300">Autentícate con tu cuenta corporativa de Google</p>
+        
+        <!-- BOTÓN OFICIAL ÚNICO DE GOOGLE -->
+        <div class="flex justify-center" id="g_id_onload_container">
+          <div id="g_id_onload"
+               data-client_id="YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
+               data-context="signin"
+               data-ux_mode="popup"
+               data-callback="handleGoogleSignInResponse"
+               data-auto_prompt="false">
+          </div>
+
+          <div class="g_id_signin"
+               data-type="standard"
+               data-shape="pill"
+               data-theme="filled_blue"
+               data-text="signin_with"
+               data-size="large"
+               data-logo_alignment="left"
+               data-width="320">
+          </div>
+        </div>
+      </div>
+
+      <div class="relative z-10 pt-4 border-t border-slate-800/80 text-center">
+        <p class="text-[11px] text-slate-500">ACRES Finance © 2026 • Autenticación Oficial Google OAuth 2.0</p>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ============================================================================== -->
+  <!-- 2. DASHBOARD PRINCIPAL DE REEMBOLSOS ACRES -->
+  <!-- ============================================================================== -->
+  <div id="appDashboard" class="hidden flex-col min-h-screen">
+    
+    <!-- HEADER NAVEGACIÓN -->
+    <header class="sticky top-0 z-30 glass-header">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-acres-700 via-acres-500 to-emerald-400 flex items-center justify-center text-white shadow-lg shadow-acres-500/30">
+            <i data-lucide="receipt" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-heading text-2xl font-bold tracking-tight text-slate-900 dark:text-white">ACRES</span>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-acres-100 dark:bg-acres-900/60 text-acres-700 dark:text-acres-300 font-semibold border border-acres-200 dark:border-acres-800">Finance</span>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Gestión de Reembolsos de Gastos</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <!-- USER BADGE -->
+          <div class="relative">
+            <button id="userMenuBtn" onclick="toggleUserDropdown(event)" class="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-acres-500 dark:hover:border-acres-400 transition-all">
+              <div class="w-7 h-7 rounded-full bg-acres-500 text-white flex items-center justify-center text-xs font-bold overflow-hidden" id="userAvatar">
+                U
+              </div>
+              <div class="text-left hidden sm:block">
+                <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-none truncate max-w-[160px]" id="userEmailDisplay">
+                  usuario@acres.com
+                </p>
+                <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium leading-none">Sesión Google Verificada</span>
+              </div>
+              <i data-lucide="chevron-down" id="dropdownChevron" class="w-3.5 h-3.5 text-slate-400 transition-transform"></i>
+            </button>
+
+            <!-- DESPLEGABLE CLICK-BASED FIJO -->
+            <div id="userDropdownMenu" class="absolute right-0 mt-1 w-52 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 py-1.5 hidden z-50 animate-fade-in">
+              <div class="px-3.5 py-2 border-b border-slate-100 dark:border-slate-800 sm:hidden">
+                <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate" id="mobileUserEmailDisplay">usuario@acres.com</p>
+              </div>
+              <button onclick="logoutApp()" class="w-full text-left px-3.5 py-2.5 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-2.5 transition-colors">
+                <i data-lucide="log-out" class="w-4 h-4 text-rose-500"></i>
+                <span>Cerrar Sesión</span>
+              </button>
+            </div>
+          </div>
+
+          <button id="themeToggleBtn" onclick="toggleTheme()" class="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-acres-500 dark:hover:text-acres-400 transition-colors flex items-center justify-center shadow-sm">
+            <i data-lucide="moon" id="moonIcon" class="w-5 h-5 hidden dark:block"></i>
+            <i data-lucide="sun" id="sunIcon" class="w-5 h-5 block dark:hidden"></i>
+          </button>
+
+          <button onclick="openModalSolicitud()" class="hidden md:flex items-center gap-2 bg-gradient-to-r from-acres-600 to-acres-500 hover:from-acres-700 hover:to-acres-600 text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-lg shadow-acres-500/25 transition-all hover:scale-[1.02] active:scale-[0.98]">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+            <span>Nueva Solicitud</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+
+      <!-- KPIS SUMMARY CARDS -->
+      <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="glass-card rounded-2xl p-4 sm:p-5 relative overflow-hidden transition-all hover:shadow-md">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Total Solicitado</span>
+            <div class="w-9 h-9 rounded-xl bg-sky-100 dark:bg-sky-950 text-sky-600 dark:text-sky-400 flex items-center justify-center">
+              <i data-lucide="wallet" class="w-5 h-5"></i>
+            </div>
+          </div>
+          <p class="text-xl sm:text-2xl font-bold font-heading text-slate-900 dark:text-white mt-2" id="kpiTotalMonto">S/. 0.00</p>
+          <span class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-1">
+            <i data-lucide="layers" class="w-3.5 h-3.5 text-sky-500"></i>
+            <span id="kpiTotalCount">0 registros</span>
+          </span>
+        </div>
+
+        <div class="glass-card rounded-2xl p-4 sm:p-5 relative overflow-hidden transition-all hover:shadow-md">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">Pendientes</span>
+            <div class="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <i data-lucide="clock" class="w-5 h-5"></i>
+            </div>
+          </div>
+          <p class="text-xl sm:text-2xl font-bold font-heading text-amber-600 dark:text-amber-400 mt-2" id="kpiPendientesMonto">S/. 0.00</p>
+          <span class="text-xs text-amber-700 dark:text-amber-300 flex items-center gap-1 mt-1 font-medium">
+            <span id="kpiPendientesCount">0 pendientes</span>
+          </span>
+        </div>
+
+        <div class="glass-card rounded-2xl p-4 sm:p-5 relative overflow-hidden transition-all hover:shadow-md">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Reembolsados</span>
+            <div class="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+            </div>
+          </div>
+          <p class="text-xl sm:text-2xl font-bold font-heading text-emerald-600 dark:text-emerald-400 mt-2" id="kpiReembolsadosMonto">S/. 0.00</p>
+          <span class="text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-1 mt-1 font-medium">
+            <span id="kpiReembolsadosCount">0 pagados</span>
+          </span>
+        </div>
+
+        <div class="glass-card rounded-2xl p-4 sm:p-5 relative overflow-hidden transition-all hover:shadow-md">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Mis Registros</span>
+            <div class="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+              <i data-lucide="user-check" class="w-5 h-5"></i>
+            </div>
+          </div>
+          <p class="text-xl sm:text-2xl font-bold font-heading text-indigo-600 dark:text-indigo-400 mt-2" id="kpiMisSolicitudesMonto">S/. 0.00</p>
+          <span class="text-xs text-indigo-700 dark:text-indigo-300 flex items-center gap-1 mt-1 font-medium">
+            <span id="kpiMisSolicitudesCount">0 mías</span>
+          </span>
+        </div>
+      </section>
+
+      <!-- BARRA DE BÚSQUEDA Y FILTROS -->
+      <section class="glass-card rounded-2xl p-4 space-y-4">
+        <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+          <div class="relative flex-grow max-w-md">
+            <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+            <input type="text" id="searchInput" oninput="applyFilters()" placeholder="Buscar por ID, solicitante o concepto..." class="w-full pl-10 pr-4 py-2 rounded-xl text-sm bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-acres-500/50 transition-all">
+          </div>
+
+          <div class="flex items-center gap-3">
+            <select id="categoriaFilter" onchange="applyFilters()" class="w-full md:w-auto px-3.5 py-2 rounded-xl text-sm bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-acres-500/50">
+              <option value="TODAS">Todas las Categorías</option>
+              <option value="Movilidad">Movilidad</option>
+              <option value="Alimentación">Alimentación</option>
+              <option value="Útiles">Útiles</option>
+              <option value="Otros">Otros</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 pt-3 overflow-x-auto">
+          <div class="flex items-center gap-2 min-w-max">
+            <button onclick="setTabFilter('TODOS')" id="tab-TODOS" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-acres-500 text-white shadow-sm">
+              Todos
+            </button>
+            <button onclick="setTabFilter('MIS_SOLICITUDES')" id="tab-MIS_SOLICITUDES" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all">
+              Mis Solicitudes
+            </button>
+            <button onclick="setTabFilter('Pendiente')" id="tab-Pendiente" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all">
+              Pendientes
+            </button>
+            <button onclick="setTabFilter('Reembolsado')" id="tab-Reembolsado" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all">
+              Reembolsados
+            </button>
+          </div>
+
+          <span class="text-xs text-slate-500 dark:text-slate-400 hidden sm:inline-block" id="recordsCounterDisplay">
+            Mostrando 0 solicitudes
+          </span>
+        </div>
+      </section>
+
+      <!-- VISTA DE TABLA Y CARDS -->
+      <section>
+        <div id="loadingSkeleton" class="glass-card rounded-2xl p-8 text-center space-y-4">
+          <div class="inline-block animate-spin w-8 h-8 border-4 border-acres-500 border-t-transparent rounded-full"></div>
+          <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Sincronizando solicitudes...</p>
+        </div>
+
+        <div id="emptyState" class="hidden glass-card rounded-2xl p-12 text-center space-y-4">
+          <div class="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-900 text-slate-400 flex items-center justify-center mx-auto">
+            <i data-lucide="file-x-2" class="w-8 h-8"></i>
+          </div>
+          <div>
+            <h4 class="text-base font-semibold text-slate-800 dark:text-slate-200">No se encontraron solicitudes</h4>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Intenta cambiar los filtros de búsqueda o agrega un nuevo reembolso.</p>
+          </div>
+        </div>
+
+        <!-- DESKTOP TABLE -->
+        <div id="desktopTableView" class="hidden md:block glass-card rounded-2xl overflow-hidden shadow-sm">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr class="bg-slate-100/70 dark:bg-slate-900/70 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-xs uppercase font-semibold">
+                  <th class="py-3.5 px-4">ID</th>
+                  <th class="py-3.5 px-4">Fecha</th>
+                  <th class="py-3.5 px-4">Solicitante</th>
+                  <th class="py-3.5 px-4">Categoría</th>
+                  <th class="py-3.5 px-4 text-right">Monto</th>
+                  <th class="py-3.5 px-4">Sustento</th>
+                  <th class="py-3.5 px-4">Estado</th>
+                  <th class="py-3.5 px-4">Validado por</th>
+                  <th class="py-3.5 px-4 text-center">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="desktopTableBody" class="divide-y divide-slate-200 dark:divide-slate-800">
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- MOBILE CARDS -->
+        <div id="mobileCardView" class="hidden space-y-3">
+        </div>
+      </section>
+    </main>
+
+    <!-- FAB MOBILE -->
+    <button onclick="openModalSolicitud()" class="md:hidden fixed right-5 bottom-6 z-40 w-14 h-14 bg-gradient-to-tr from-acres-700 to-acres-500 text-white rounded-full shadow-2xl shadow-acres-500/50 flex items-center justify-center hover:scale-105 active:scale-95 transition-all">
+      <i data-lucide="plus" class="w-7 h-7"></i>
+    </button>
+  </div>
+
+  <!-- MODAL NUEVA/EDITAR SOLICITUD -->
+  <div id="modalSolicitud" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="glass-card w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-fade-in my-8">
+      <div class="px-6 py-4 bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-acres-500 text-white flex items-center justify-center">
+            <i data-lucide="edit-3" class="w-4 h-4"></i>
+          </div>
+          <h3 id="modalSolicitudTitle" class="font-heading font-bold text-lg text-slate-900 dark:text-white">Nueva Solicitud de Reembolso</h3>
+        </div>
+        <button onclick="closeModalSolicitud()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 flex items-center justify-center transition-all">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="formSolicitud" onsubmit="handleSaveSolicitud(event)" class="p-6 space-y-4">
+        <input type="hidden" id="formId">
+        <input type="hidden" id="formSustentoUrl">
+        <input type="hidden" id="formSustentoNombre">
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Fecha del Gasto</label>
+            <input type="date" id="formFecha" required class="w-full px-3 py-2 text-sm rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-acres-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Solicitante (Email)</label>
+            <input type="email" id="formSolicitante" readonly class="w-full px-3 py-2 text-sm rounded-xl bg-slate-200/70 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-mono cursor-not-allowed">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Categoría</label>
+            <select id="formCategoria" required class="w-full px-3 py-2 text-sm rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-acres-500 focus:outline-none">
+              <option value="Movilidad">Movilidad</option>
+              <option value="Alimentación">Alimentación</option>
+              <option value="Útiles">Útiles</option>
+              <option value="Otros">Otros</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Monto Utilizado (S/.)</label>
+            <div class="relative">
+              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">S/.</span>
+              <input type="number" id="formMonto" step="0.01" min="0.10" required placeholder="0.00" class="w-full pl-9 pr-3 py-2 text-sm rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold focus:ring-2 focus:ring-acres-500 focus:outline-none">
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Detalle / Concepto del Gasto</label>
+          <textarea id="formDetalle" rows="2" required placeholder="Describe brevemente el motivo del gasto..." class="w-full px-3 py-2 text-sm rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-acres-500 focus:outline-none"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Comprobante / Foto (Sustento)</label>
+          <div id="dropZone" class="file-drop-zone border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:border-acres-500 dark:hover:border-acres-400 bg-slate-50/50 dark:bg-slate-900/50">
+            <input type="file" id="fileInput" accept="image/*,application/pdf" capture="environment" onchange="handleFileSelect(event)" class="hidden">
+            <div onclick="document.getElementById('fileInput').click()" class="space-y-1">
+              <div class="w-10 h-10 rounded-full bg-acres-100 dark:bg-acres-950 text-acres-600 dark:text-acres-400 flex items-center justify-center mx-auto">
+                <i data-lucide="camera" class="w-5 h-5"></i>
+              </div>
+              <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Tomar Foto o Seleccionar Archivo</p>
+              <p class="text-[11px] text-slate-400">PDF, JPG o PNG (Compresión automática antes de subir)</p>
+            </div>
+            
+            <div id="filePreviewContainer" class="hidden mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-left">
+              <div class="flex items-center gap-2 overflow-hidden">
+                <i data-lucide="file-check" class="w-4 h-4 text-emerald-500 flex-shrink-0"></i>
+                <span id="filePreviewName" class="text-xs font-medium text-slate-700 dark:text-slate-300 truncate max-w-[200px]">documento.jpg</span>
+              </div>
+              <button type="button" onclick="clearSelectedFile()" class="text-xs text-rose-500 font-semibold hover:underline">Quitar</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="seccionValidacionJefatura" class="hidden p-3 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">Sección de Validación (Jefatura)</span>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Estado del Reembolso</label>
+              <select id="formEstado" class="w-full px-3 py-1.5 text-xs font-semibold rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100">
+                <option value="Pendiente">Pendiente</option>
+                <option value="Reembolsado">Reembolsado</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">Validado por (Jefe)</label>
+              <input type="text" id="formValidadoPor" placeholder="Nombre del aprobador" class="w-full px-3 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100">
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-2">
+          <button type="button" onclick="closeModalSolicitud()" class="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
+            Cancelar
+          </button>
+          <button type="submit" id="btnSaveSolicitud" class="flex items-center gap-2 bg-acres-500 hover:bg-acres-600 text-white font-semibold text-xs px-5 py-2.5 rounded-xl shadow-md transition-all">
+            <i data-lucide="save" class="w-4 h-4"></i>
+            <span>Guardar Solicitud</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL APROBACIÓN JEFATURA -->
+  <div id="modalAprobacion" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 p-6 space-y-4 animate-fade-in">
+      <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+        <h3 class="font-heading font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+          <i data-lucide="shield-check" class="w-5 h-5 text-emerald-500"></i>
+          <span>Aprobación de Jefatura</span>
+        </h3>
+        <button onclick="closeModalAprobacion()" class="text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <p class="text-xs text-slate-500 dark:text-slate-400">
+        Actualiza el estado de reembolso para la solicitud <strong id="aprobacionIdDisplay" class="text-slate-800 dark:text-slate-200">#REEM-000</strong>.
+      </p>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Nuevo Estado</label>
+          <select id="aprobacionNuevoEstado" class="w-full px-3 py-2 text-sm rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-semibold">
+            <option value="Reembolsado">Reembolsado (Pagado)</option>
+            <option value="Pendiente">Pendiente</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Tu Nombre (Aprobador)</label>
+          <input type="text" id="aprobacionValidadoPor" placeholder="Ej: Ing. Carlos Pérez" class="w-full px-3 py-2 text-sm rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100">
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button onclick="closeModalAprobacion()" class="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400">Cancelar</button>
+        <button onclick="confirmarAprobacion()" class="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-sm">
+          Confirmar Cambio
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICACIÓN -->
+  <div id="toastNotification" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 hidden transition-all duration-300 transform toast-enter">
+    <div id="toastContent" class="glass-card px-4 py-3 rounded-2xl shadow-xl border border-slate-300 dark:border-slate-700 flex items-center gap-3">
+      <i data-lucide="info" id="toastIcon" class="w-5 h-5 text-acres-500"></i>
+      <span id="toastMessage" class="text-xs font-medium text-slate-800 dark:text-slate-100">Notificación</span>
+    </div>
+  </div>
+
+  <!-- APP SCRIPT JS LOGIC -->
+  <script src="app.js"></script>
+</body>
+</html>
