@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Con Vista Previa de Foto/Comprobante y Sincronización Global
+ * Sincronización Fluida Sin Saltos Visuales con Candado Asíncrono de 10 Segundos
  * ==============================================================================
  */
 
@@ -112,7 +112,6 @@ function logoutApp() {
   localStorage.removeItem('acres_user_email');
   localStorage.removeItem('acres_user_picture');
   localStorage.removeItem('acres_cached_solicitudes');
-  localStorage.removeItem('acres_status_overrides');
   state.currentUserEmail = '';
   state.currentUserPicture = '';
   state.solicitudes = [];
@@ -179,13 +178,13 @@ function setTheme(theme) {
 }
 
 /* ==========================================
-   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN EN TIEMPO REAL GLOBAL
+   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN FLUIDA SIN SALTOS VISUALES
    ========================================== */
 function startAutoSync() {
   if (autoSyncInterval) clearInterval(autoSyncInterval);
   autoSyncInterval = setInterval(() => {
     fetchSolicitudesFromAPI(false);
-  }, 4000);
+  }, 5000);
 }
 
 function fetchSolicitudesFromAPI(showSpinner = true) {
@@ -206,17 +205,27 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
 
         const mergedMap = new Map();
 
+        // Cargar registros remotos de la nube
         remoteList.forEach(item => {
           if (item && item.id) mergedMap.set(item.id, item);
         });
 
+        // Aplicar candado asíncrono a cambios hechos recientemente (< 10 segundos)
         currentList.forEach(item => {
-          if (item && item.id && !mergedMap.has(item.id)) {
-            mergedMap.set(item.id, item);
-          } else if (item && item.id && mergedMap.has(item.id)) {
-            const remoteItem = mergedMap.get(item.id);
-            if (item.sustentoBase64 && !remoteItem.sustentoUrl) {
-              remoteItem.sustentoBase64 = item.sustentoBase64;
+          if (item && item.id) {
+            const isRecentlyModified = item._lastModifiedLocally && (Date.now() - item._lastModifiedLocally < 10000);
+
+            if (!mergedMap.has(item.id)) {
+              mergedMap.set(item.id, item);
+            } else if (isRecentlyModified) {
+              // Si el usuario acaba de cambiar estado o validadoPor en este navegador, NO dejar que el servidor antiguo lo pise
+              const remoteItem = mergedMap.get(item.id);
+              remoteItem.estado = item.estado;
+              remoteItem.validadoPor = item.validadoPor;
+              remoteItem._lastModifiedLocally = item._lastModifiedLocally;
+              if (item.sustentoBase64 && !remoteItem.sustentoUrl) {
+                remoteItem.sustentoBase64 = item.sustentoBase64;
+              }
             }
           }
         });
@@ -591,7 +600,7 @@ function formatCurrency(num) {
 }
 
 /* ==========================================
-   7. CREACIÓN Y FORMULARIO CON VISTA PREVIA VISUAL DE COMPROBANTES
+   7. CREACIÓN Y FORMULARIO CON VISTA PREVIA VISUAL
    ========================================== */
 function openModalSolicitud(data = null) {
   const modal = document.getElementById('modalSolicitud');
@@ -797,7 +806,8 @@ function handleSaveSolicitud(e) {
     sustentoUrl: document.getElementById('formSustentoUrl').value || sustentoBase64 || '',
     sustentoNombre: sustentoNombre,
     sustentoBase64: sustentoBase64,
-    estado: estadoPrevio
+    estado: estadoPrevio,
+    _lastModifiedLocally: Date.now() // Candado de modificación reciente
   };
 
   const existingIndex = state.solicitudes.findIndex(s => s.id === recordId);
@@ -826,13 +836,11 @@ function handleSaveSolicitud(e) {
     method: 'POST',
     mode: 'no-cors',
     body: JSON.stringify({ action: 'saveSolicitud', data: formData })
-  }).then(() => {
-    setTimeout(() => fetchSolicitudesFromAPI(false), 2000);
-  }).catch(() => {});
+  });
 }
 
 /* ==========================================
-   8. MODAL DE VALIDACIÓN CON SINCRONIZACIÓN GLOBAL INSTANTÁNEA
+   8. MODAL DE VALIDACIÓN 100% FLUIDO Y FIJO
    ========================================== */
 function openModalAprobacion(id) {
   const item = state.solicitudes.find(s => s.id === id);
@@ -857,10 +865,12 @@ function confirmarAprobacion() {
   const nuevoEstado = document.getElementById('aprobacionNuevoEstado').value;
   const validadoPor = (document.getElementById('aprobacionValidadoPor').value || '').trim();
 
+  // 1. Actualizar inmediatamente con marca de tiempo local de 10 segundos
   const itemIndex = state.solicitudes.findIndex(s => s.id === targetId);
   if (itemIndex >= 0) {
     state.solicitudes[itemIndex].estado = nuevoEstado;
     state.solicitudes[itemIndex].validadoPor = validadoPor;
+    state.solicitudes[itemIndex]._lastModifiedLocally = Date.now();
   }
 
   localStorage.setItem('acres_cached_solicitudes', JSON.stringify(state.solicitudes));
@@ -870,6 +880,7 @@ function confirmarAprobacion() {
   closeModalAprobacion();
   showToast(`Estado actualizado a: ${nuevoEstado}`, 'success');
 
+  // 2. Enviar actualización a la nube sin disparar temporizadores conflictivos
   const item = state.solicitudes.find(s => s.id === targetId);
   if (item) {
     fetch(API_URL, {
@@ -879,9 +890,7 @@ function confirmarAprobacion() {
         action: 'saveSolicitud',
         data: item
       })
-    }).then(() => {
-      setTimeout(() => fetchSolicitudesFromAPI(false), 1500);
-    }).catch(() => {});
+    });
   }
 }
 
