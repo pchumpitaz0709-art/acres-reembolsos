@@ -260,7 +260,7 @@
         </div>
       </section>
 
-      <!-- VISTA DE TABLA SIN ID CON PRIMERA COLUMNA FECHA Y SEGUNDA CONCEPTO/DETALLE -->
+      <!-- VISTA DE TABLA CON COLUMNAS FECHA, DETALLE Y ACCIONES DE ELIMINACIÓN PROPIAS -->
       <section>
         <div id="loadingSkeleton" class="glass-card rounded-2xl p-8 text-center space-y-4">
           <div class="inline-block animate-spin w-8 h-8 border-4 border-acres-500 border-t-transparent rounded-full"></div>
@@ -451,6 +451,28 @@
             <span>Abrir en Google Drive</span>
           </a>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE CONFIRMACIÓN PARA ELIMINAR REGISTRO PROPIO -->
+  <div id="modalEliminarConfirm" class="fixed inset-0 z-50 hidden bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card w-full max-w-sm rounded-2xl shadow-2xl border border-rose-200 dark:border-rose-900/60 p-6 space-y-4 animate-fade-in text-center">
+      <div class="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
+        <i data-lucide="trash-2" class="w-6 h-6"></i>
+      </div>
+      <div class="space-y-1">
+        <h4 class="font-heading font-bold text-base text-slate-900 dark:text-white">¿Eliminar esta solicitud?</h4>
+        <p class="text-xs text-slate-500 dark:text-slate-400">Esta acción borrará este registro de tu cuenta de forma permanente.</p>
+      </div>
+
+      <div class="flex items-center justify-center gap-3 pt-2">
+        <button onclick="closeModalEliminar()" class="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all">
+          Cancelar
+        </button>
+        <button onclick="confirmarEliminarPropio()" class="px-4 py-2 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-md transition-all">
+          Sí, Eliminar
+        </button>
       </div>
     </div>
   </div>

@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Autenticación 100% Google OAuth 2.0 con Sincronización Multiusuario en Tiempo Real
+ * Autenticación 100% Google OAuth 2.0 con Eliminación Exclusiva de Registros Propios
  * ==============================================================================
  */
 
@@ -14,7 +14,8 @@ let state = {
   solicitudes: [],
   currentTab: 'TODOS',
   selectedFileObject: null,
-  selectedAprobacionId: null
+  selectedAprobacionId: null,
+  selectedEliminarId: null
 };
 
 let autoSyncInterval = null;
@@ -312,7 +313,7 @@ function updateKPIs() {
 }
 
 /* ==========================================
-   VISTA DE TABLA (SIN COLUMNA ID, FECHA PRIMERA Y DETALLE SEGUNDO)
+   VISTA DE TABLA CON SEGURIDAD PARA ELIMINAR EXCLUSIVAMENTE REGISTROS PROPIOS
    ========================================== */
 function renderDataView(items) {
   const desktopTbody = document.getElementById('desktopTableBody');
@@ -374,6 +375,9 @@ function renderDataView(items) {
               <button onclick="editSolicitud('${item.id}')" title="Editar mi solicitud" class="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all">
                 <i data-lucide="pencil" class="w-4 h-4"></i>
               </button>
+              <button onclick="openModalEliminar('${item.id}')" title="Eliminar mi registro" class="p-1.5 rounded-lg text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-950/60 transition-all">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
             ` : ''}
             <button onclick="openModalAprobacion('${item.id}')" title="Aprobar / Validar Reembolso (Jefatura)" class="px-2 py-1 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 text-xs font-semibold hover:bg-emerald-200 transition-all flex items-center gap-1">
               <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
@@ -408,21 +412,24 @@ function renderDataView(items) {
         <div class="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
           <span class="truncate max-w-[150px]">${item.solicitante} ${isOwner ? '<strong>(Tú)</strong>' : ''}</span>
           
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1.5">
             ${hasSustento ? `
-              <button onclick="openModalVisorSustento('${item.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-semibold text-xs flex items-center gap-1">
+              <button onclick="openModalVisorSustento('${item.id}')" class="px-2 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-semibold text-xs flex items-center gap-1">
                 <i data-lucide="paperclip" class="w-3.5 h-3.5"></i>
-                <span>Ver Foto</span>
+                <span>Foto</span>
               </button>
             ` : ''}
 
             ${isOwner ? `
-              <button onclick="editSolicitud('${item.id}')" class="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs">
+              <button onclick="editSolicitud('${item.id}')" class="px-2 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs">
                 Editar
+              </button>
+              <button onclick="openModalEliminar('${item.id}')" class="p-1 rounded-lg text-rose-500 hover:bg-rose-100 transition-all">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
               </button>
             ` : ''}
 
-            <button onclick="openModalAprobacion('${item.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-semibold text-xs flex items-center gap-1">
+            <button onclick="openModalAprobacion('${item.id}')" class="px-2 py-1 rounded-lg bg-emerald-600 text-white font-semibold text-xs flex items-center gap-1">
               <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
               <span>Validar</span>
             </button>
@@ -436,7 +443,66 @@ function renderDataView(items) {
 }
 
 /* ==========================================
-   5. VISOR EN PANTALLA COMPLETA PARA SUSTENTOS (FOTOS / PDF)
+   5. ELIMINACIÓN SEGURA DE REGISTROS PROPIOS
+   ========================================== */
+function openModalEliminar(id) {
+  const item = state.solicitudes.find(s => s.id === id);
+  if (!item) return;
+
+  // VERIFICACIÓN DE SEGURIDAD EXCLUSIVA POR CUENTA
+  if (item.solicitante.toLowerCase() !== state.currentUserEmail.toLowerCase()) {
+    showToast('Solo puedes eliminar tus propios reembolsos.', 'error');
+    return;
+  }
+
+  state.selectedEliminarId = id;
+  document.getElementById('modalEliminarConfirm').classList.remove('hidden');
+  lucide.createIcons();
+}
+
+function closeModalEliminar() {
+  state.selectedEliminarId = null;
+  document.getElementById('modalEliminarConfirm').classList.add('hidden');
+}
+
+function confirmarEliminarPropio() {
+  if (!state.selectedEliminarId) return;
+
+  const targetId = state.selectedEliminarId;
+  const item = state.solicitudes.find(s => s.id === targetId);
+
+  if (!item || item.solicitante.toLowerCase() !== state.currentUserEmail.toLowerCase()) {
+    showToast('No tienes permiso para eliminar esta solicitud.', 'error');
+    closeModalEliminar();
+    return;
+  }
+
+  // 1. ELIMINACIÓN INSTANTÁNEA EN PANTALLA Y LOCALSTORAGE (< 0.1s)
+  state.solicitudes = state.solicitudes.filter(s => s.id !== targetId);
+  localStorage.setItem('acres_cached_solicitudes', JSON.stringify(state.solicitudes));
+  updateKPIs();
+  applyFilters();
+
+  closeModalEliminar();
+  showToast('Solicitud eliminada correctamente.', 'success');
+
+  // 2. ELIMINACIÓN EN SEGUNDO PLANO EN GOOGLE SHEETS
+  fetch(API_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'deleteSolicitud',
+      id: targetId,
+      userEmail: state.currentUserEmail
+    })
+  }).then(() => {
+    setTimeout(() => fetchSolicitudesFromAPI(false), 2000);
+  }).catch(() => {});
+}
+
+/* ==========================================
+   6. VISOR EN PANTALLA COMPLETA PARA SUSTENTOS (FOTOS / PDF)
    ========================================== */
 function openModalVisorSustento(id) {
   const item = state.solicitudes.find(s => s.id === id);
@@ -503,7 +569,7 @@ function formatCurrency(num) {
 }
 
 /* ==========================================
-   6. COMPRESIÓN DE FOTOS Y FORMULARIOS
+   7. COMPRESIÓN DE FOTOS Y FORMULARIOS
    ========================================== */
 function openModalSolicitud(data = null) {
   const modal = document.getElementById('modalSolicitud');
