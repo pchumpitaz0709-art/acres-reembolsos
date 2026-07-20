@@ -312,7 +312,7 @@
     </button>
   </div>
 
-  <!-- MODAL NUEVA/EDITAR SOLICITUD (CON CAMPO PARA ASIGNAR VALIDADO POR) -->
+  <!-- MODAL NUEVA/EDITAR SOLICITUD (CON VISTA PREVIA VISUAL DE FOTO O PDF) -->
   <div id="modalSolicitud" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
     <div class="glass-card w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-fade-in my-8">
       <div class="px-6 py-4 bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
@@ -376,7 +376,8 @@
           <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Comprobante / Foto (Sustento)</label>
           <div id="dropZone" class="file-drop-zone border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:border-acres-500 dark:hover:border-acres-400 bg-slate-50/50 dark:bg-slate-900/50">
             <input type="file" id="fileInput" accept="image/*,application/pdf" capture="environment" onchange="handleFileSelect(event)" class="hidden">
-            <div onclick="document.getElementById('fileInput').click()" class="space-y-1">
+            
+            <div id="fileUploadPrompt" onclick="document.getElementById('fileInput').click()" class="space-y-1">
               <div class="w-10 h-10 rounded-full bg-acres-100 dark:bg-acres-950 text-acres-600 dark:text-acres-400 flex items-center justify-center mx-auto">
                 <i data-lucide="camera" class="w-5 h-5"></i>
               </div>
@@ -384,12 +385,28 @@
               <p class="text-[11px] text-slate-400">PDF, JPG o PNG (Compresión automática antes de subir)</p>
             </div>
             
-            <div id="filePreviewContainer" class="hidden mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-left">
-              <div class="flex items-center gap-2 overflow-hidden">
-                <i data-lucide="file-check" class="w-4 h-4 text-emerald-500 flex-shrink-0"></i>
-                <span id="filePreviewName" class="text-xs font-medium text-slate-700 dark:text-slate-300 truncate max-w-[200px]">documento.jpg</span>
+            <!-- TARJETA CON VISTA PREVIA VISUAL DE IMAGEN O PDF -->
+            <div id="filePreviewContainer" class="hidden mt-2 p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between shadow-sm">
+              <div class="flex items-center gap-3 overflow-hidden">
+                <!-- THUMBNAIL FOTO -->
+                <img id="filePreviewThumbnail" src="" class="w-12 h-12 object-cover rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm hidden">
+                <!-- ICONO PDF -->
+                <div id="filePreviewPdfIcon" class="w-12 h-12 rounded-lg bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 flex items-center justify-center flex-shrink-0 hidden">
+                  <i data-lucide="file-text" class="w-6 h-6"></i>
+                </div>
+                <div class="text-left overflow-hidden">
+                  <p id="filePreviewName" class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate max-w-[180px]">documento.jpg</p>
+                  <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">✓ Listo para adjuntar</span>
+                </div>
               </div>
-              <button type="button" onclick="clearSelectedFile()" class="text-xs text-rose-500 font-semibold hover:underline">Quitar</button>
+              <div class="flex items-center gap-2">
+                <button type="button" onclick="document.getElementById('fileInput').click()" class="px-2 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition-all">
+                  Cambiar
+                </button>
+                <button type="button" onclick="clearSelectedFile()" class="p-1 rounded-lg text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-950/50 transition-all">
+                  <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+              </div>
             </div>
           </div>
         </div>

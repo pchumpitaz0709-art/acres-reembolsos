@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Sincronización Global Unificada Multiusuario en Tiempo Real
+ * Con Vista Previa de Foto/Comprobante y Sincronización Global
  * ==============================================================================
  */
 
@@ -206,12 +206,10 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
 
         const mergedMap = new Map();
 
-        // Cargar primero datos remotos como fuente de verdad absoluta de Google Sheets
         remoteList.forEach(item => {
           if (item && item.id) mergedMap.set(item.id, item);
         });
 
-        // Preservar comprobante local base64 si aún se está subiendo
         currentList.forEach(item => {
           if (item && item.id && !mergedMap.has(item.id)) {
             mergedMap.set(item.id, item);
@@ -593,7 +591,7 @@ function formatCurrency(num) {
 }
 
 /* ==========================================
-   7. CREACIÓN Y FORMULARIO DE SOLICITUD
+   7. CREACIÓN Y FORMULARIO CON VISTA PREVIA VISUAL DE COMPROBANTES
    ========================================== */
 function openModalSolicitud(data = null) {
   const modal = document.getElementById('modalSolicitud');
@@ -615,8 +613,9 @@ function openModalSolicitud(data = null) {
     document.getElementById('formSustentoUrl').value = data.sustentoUrl || '';
     document.getElementById('formSustentoNombre').value = data.sustentoNombre || '';
 
-    if (data.sustentoNombre) {
-      showFilePreviewUI(data.sustentoNombre);
+    const sourceUrl = data.sustentoBase64 || data.sustentoUrl || '';
+    if (data.sustentoNombre || sourceUrl) {
+      showFilePreviewUI(data.sustentoNombre || 'comprobante.jpg', sourceUrl);
     }
 
     const itemSolicitanteClean = (data.solicitante || '').toLowerCase().trim();
@@ -665,7 +664,7 @@ function handleFileSelect(event) {
         mimeType: 'image/jpeg',
         base64Data: compressedBase64
       };
-      showFilePreviewUI(newFileName + ' (Optimizado)');
+      showFilePreviewUI(newFileName + ' (Optimizado)', compressedBase64);
     });
   } else {
     if (file.size > 10 * 1024 * 1024) {
@@ -679,7 +678,7 @@ function handleFileSelect(event) {
         mimeType: file.type,
         base64Data: e.target.result
       };
-      showFilePreviewUI(file.name);
+      showFilePreviewUI(file.name, e.target.result);
     };
     reader.readAsDataURL(file);
   }
@@ -718,9 +717,32 @@ function compressImage(file, maxDimension, quality, callback) {
   reader.readAsDataURL(file);
 }
 
-function showFilePreviewUI(fileName) {
+function showFilePreviewUI(fileName, sourceUrl = '') {
   document.getElementById('filePreviewName').textContent = fileName;
-  document.getElementById('filePreviewContainer').classList.remove('hidden');
+
+  const imgElem = document.getElementById('filePreviewThumbnail');
+  const pdfIcon = document.getElementById('filePreviewPdfIcon');
+  const promptContainer = document.getElementById('fileUploadPrompt');
+  const previewContainer = document.getElementById('filePreviewContainer');
+
+  imgElem.classList.add('hidden');
+  pdfIcon.classList.add('hidden');
+
+  if (sourceUrl && (sourceUrl.startsWith('data:image/') || sourceUrl.match(/\.(jpeg|jpg|png|gif|webp)($|\?)/i))) {
+    imgElem.src = sourceUrl;
+    imgElem.classList.remove('hidden');
+  } else if (sourceUrl && (sourceUrl.startsWith('data:application/pdf') || sourceUrl.endsWith('.pdf'))) {
+    pdfIcon.classList.remove('hidden');
+  } else if (sourceUrl) {
+    imgElem.src = sourceUrl;
+    imgElem.classList.remove('hidden');
+  } else {
+    pdfIcon.classList.remove('hidden');
+  }
+
+  if (promptContainer) promptContainer.classList.add('hidden');
+  if (previewContainer) previewContainer.classList.remove('hidden');
+  lucide.createIcons();
 }
 
 function clearSelectedFile() {
@@ -728,7 +750,12 @@ function clearSelectedFile() {
   document.getElementById('fileInput').value = '';
   document.getElementById('formSustentoUrl').value = '';
   document.getElementById('formSustentoNombre').value = '';
-  document.getElementById('filePreviewContainer').classList.add('hidden');
+  
+  const promptContainer = document.getElementById('fileUploadPrompt');
+  const previewContainer = document.getElementById('filePreviewContainer');
+
+  if (promptContainer) promptContainer.classList.remove('hidden');
+  if (previewContainer) previewContainer.classList.add('hidden');
 }
 
 function generateUniqueId() {
@@ -830,7 +857,6 @@ function confirmarAprobacion() {
   const nuevoEstado = document.getElementById('aprobacionNuevoEstado').value;
   const validadoPor = (document.getElementById('aprobacionValidadoPor').value || '').trim();
 
-  // 1. Actualizar estado y validadoPor en el objeto local
   const itemIndex = state.solicitudes.findIndex(s => s.id === targetId);
   if (itemIndex >= 0) {
     state.solicitudes[itemIndex].estado = nuevoEstado;
@@ -844,7 +870,6 @@ function confirmarAprobacion() {
   closeModalAprobacion();
   showToast(`Estado actualizado a: ${nuevoEstado}`, 'success');
 
-  // 2. Enviar actualización a Google Sheets para que se guarde globalmente en la nube
   const item = state.solicitudes.find(s => s.id === targetId);
   if (item) {
     fetch(API_URL, {
@@ -855,7 +880,6 @@ function confirmarAprobacion() {
         data: item
       })
     }).then(() => {
-      // Sincronización transparente tras 1.5s para unificar a todos los usuarios
       setTimeout(() => fetchSolicitudesFromAPI(false), 1500);
     }).catch(() => {});
   }
