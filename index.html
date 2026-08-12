@@ -31,6 +31,9 @@
   <!-- LUCIDE ICONS CDN -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
+  <!-- TESSERACT.JS OCR CDN PARA LECTURA AUTOMÁTICA DE FOTOS DE COMPROBANTES -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
   <!-- GOOGLE IDENTITY SERVICES (OFFICIAL GOOGLE SIGN-IN SDK) -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
@@ -241,16 +244,14 @@
         <div class="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 pt-3 overflow-x-auto">
           <div class="flex items-center gap-2 min-w-max">
             <button onclick="setTabFilter('TODOS')" id="tab-TODOS" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-acres-500 text-white shadow-sm">
-              Todos
+              Pendientes Activos
             </button>
             <button onclick="setTabFilter('MIS_SOLICITUDES')" id="tab-MIS_SOLICITUDES" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all">
               Mis Solicitudes
             </button>
-            <button onclick="setTabFilter('Pendiente')" id="tab-Pendiente" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all">
-              Pendientes
-            </button>
-            <button onclick="setTabFilter('Reembolsado')" id="tab-Reembolsado" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all">
-              Reembolsados
+            <button onclick="setTabFilter('Reembolsado')" id="tab-Reembolsado" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all flex items-center gap-1">
+              <i data-lucide="archive" class="w-3.5 h-3.5"></i>
+              <span>Historial (Reembolsados)</span>
             </button>
           </div>
 
@@ -272,8 +273,8 @@
             <i data-lucide="file-x-2" class="w-8 h-8"></i>
           </div>
           <div>
-            <h4 class="text-base font-semibold text-slate-800 dark:text-slate-200">No se encontraron solicitudes</h4>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Intenta cambiar los filtros de búsqueda o agrega un nuevo reembolso.</p>
+            <h4 class="text-base font-semibold text-slate-800 dark:text-slate-200">No se encontraron solicitudes pendientes</h4>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Los reembolsos pagados se archivan automáticamente en la pestaña de Historial.</p>
           </div>
         </div>
 
@@ -312,7 +313,7 @@
     </button>
   </div>
 
-  <!-- MODAL NUEVA/EDITAR SOLICITUD (CON VISTA PREVIA VISUAL DE FOTO O PDF) -->
+  <!-- MODAL NUEVA/EDITAR SOLICITUD (CON ESCÁNER AUTOMÁTICO DE IA OCR) -->
   <div id="modalSolicitud" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
     <div class="glass-card w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-fade-in my-8">
       <div class="px-6 py-4 bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
@@ -331,6 +332,12 @@
         <input type="hidden" id="formId">
         <input type="hidden" id="formSustentoUrl">
         <input type="hidden" id="formSustentoNombre">
+
+        <!-- ALERTA ESCÁNER OCR IA -->
+        <div id="ocrStatusBadge" class="hidden p-3 rounded-xl bg-sky-50 dark:bg-sky-950/80 border border-sky-200 dark:border-sky-800 flex items-center gap-2.5 text-xs text-sky-700 dark:text-sky-300">
+          <i data-lucide="sparkles" id="ocrIcon" class="w-4 h-4 text-sky-500 animate-spin flex-shrink-0"></i>
+          <span id="ocrTextStatus" class="font-medium">Escaneando comprobante con IA... Detectando monto y concepto automáticamente.</span>
+        </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -373,7 +380,7 @@
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Comprobante / Foto (Sustento)</label>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Comprobante / Foto (Escáner Automático IA)</label>
           <div id="dropZone" class="file-drop-zone border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:border-acres-500 dark:hover:border-acres-400 bg-slate-50/50 dark:bg-slate-900/50">
             <input type="file" id="fileInput" accept="image/*,application/pdf" capture="environment" onchange="handleFileSelect(event)" class="hidden">
             
@@ -382,7 +389,7 @@
                 <i data-lucide="camera" class="w-5 h-5"></i>
               </div>
               <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Tomar Foto o Seleccionar Archivo</p>
-              <p class="text-[11px] text-slate-400">PDF, JPG o PNG (Compresión automática antes de subir)</p>
+              <p class="text-[11px] text-slate-400">✨ Lectura Automática OCR: Rellena el monto y concepto solo con la foto</p>
             </div>
             
             <!-- TARJETA CON VISTA PREVIA VISUAL DE IMAGEN O PDF -->
@@ -396,7 +403,7 @@
                 </div>
                 <div class="text-left overflow-hidden">
                   <p id="filePreviewName" class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate max-w-[180px]">documento.jpg</p>
-                  <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">✓ Listo para adjuntar</span>
+                  <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">✓ Adjuntado y Escaneado</span>
                 </div>
               </div>
               <div class="flex items-center gap-2">

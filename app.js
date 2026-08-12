@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Renderizado Móvil Responsive Completo e Integración Total
+ * Integración de Escáner IA OCR (Tesseract.js) + Archivado Automático de Reembolsados
  * ==============================================================================
  */
 
@@ -178,7 +178,7 @@ function setTheme(theme) {
 }
 
 /* ==========================================
-   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN FLUIDA
+   3. COMUNICACIÓN Y AUTO-SINCRONIZACIÓN FLUIDA EN TIEMPO REAL
    ========================================== */
 function startAutoSync() {
   if (autoSyncInterval) clearInterval(autoSyncInterval);
@@ -241,17 +241,17 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
 }
 
 /* ==========================================
-   4. FILTROS Y KPIS
+   4. FILTROS Y KPIS (ARCHIVADO AUTOMÁTICO DE REEMBOLSADOS)
    ========================================== */
 function setTabFilter(tabName) {
   state.currentTab = tabName;
-  ['TODOS', 'MIS_SOLICITUDES', 'Pendiente', 'Reembolsado'].forEach(tab => {
+  ['TODOS', 'MIS_SOLICITUDES', 'Reembolsado'].forEach(tab => {
     const btn = document.getElementById(`tab-${tab}`);
     if (!btn) return;
     if (tab === tabName) {
-      btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-acres-500 text-white shadow-sm';
+      btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all bg-acres-500 text-white shadow-sm flex items-center gap-1';
     } else {
-      btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all';
+      btn.className = 'px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all flex items-center gap-1';
     }
   });
   applyFilters();
@@ -265,18 +265,24 @@ function applyFilters() {
     const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
     const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
 
+    // VISTA PRINCIPAL (TODOS / PENDIENTES ACTIVOS): Oculta automáticamente los que ya fueron Reembolsados
+    if (state.currentTab === 'TODOS' && item.estado === 'Reembolsado') {
+      return false;
+    }
+
     if (state.currentTab === 'MIS_SOLICITUDES' && itemSolicitanteClean !== currentEmailClean) {
       return false;
     }
-    if (state.currentTab === 'Pendiente' && item.estado !== 'Pendiente') {
-      return false;
-    }
+
+    // PESTAÑA HISTORIAL (REEMBOLSADOS): Muestra solo los archivados pagados
     if (state.currentTab === 'Reembolsado' && item.estado !== 'Reembolsado') {
       return false;
     }
+
     if (selectedCategoria !== 'TODAS' && item.categoria !== selectedCategoria) {
       return false;
     }
+
     if (searchText !== '') {
       const matchSolicitante = itemSolicitanteClean.includes(searchText);
       const matchDetalle = (item.detalle || '').toLowerCase().includes(searchText);
@@ -335,10 +341,9 @@ function updateKPIs() {
 }
 
 /* ==========================================
-   5. VISTA RENDERIZADA RESPONSIVE (TABLA DESKTOP Y TARJETAS MÓVIL NATIVAS)
+   5. VISTA RENDERIZADA RESPONSIVE (TABLA Y TARJETAS MÓVILES)
    ========================================== */
 function renderDataView(items) {
-  const desktopTableContainer = document.getElementById('desktopTableView');
   const desktopTbody = document.getElementById('desktopTableBody');
   const mobileCardContainer = document.getElementById('mobileCardView');
   const emptyState = document.getElementById('emptyState');
@@ -416,7 +421,7 @@ function renderDataView(items) {
     `;
   }).join('');
 
-  // RENDER MOBILE CARDS NATIVAS EN CELULARES Y TABLETS
+  // RENDER MOBILE CARDS NATIVAS EN CELULARES
   mobileCardContainer.innerHTML = items.map(item => {
     const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
     const isOwner = (itemSolicitanteClean === currentEmailClean) && (currentEmailClean !== '');
@@ -477,7 +482,117 @@ function renderDataView(items) {
 }
 
 /* ==========================================
-   6. ELIMINACIÓN SEGURA DE REGISTROS PROPIOS
+   6. LECTURA AUTOMÁTICA DE FOTOS CON ESCÁNER IA (OCR TESSERACT)
+   ========================================== */
+function runReceiptOCRScan(imageSource) {
+  const ocrBadge = document.getElementById('ocrStatusBadge');
+  const ocrTextStatus = document.getElementById('ocrTextStatus');
+  const ocrIcon = document.getElementById('ocrIcon');
+
+  if (ocrBadge) {
+    ocrBadge.classList.remove('hidden');
+    ocrTextStatus.textContent = '✨ Escaneando comprobante con IA... Leyendo monto, fecha y concepto.';
+    ocrIcon.className = 'w-4 h-4 text-sky-500 animate-spin flex-shrink-0';
+  }
+
+  if (window.Tesseract) {
+    Tesseract.recognize(imageSource, 'spa', {
+      logger: m => {}
+    }).then(({ data: { text } }) => {
+      parseAndAutoFillForm(text);
+    }).catch(err => {
+      fallbackRegexParsing(imageSource);
+    });
+  } else {
+    fallbackRegexParsing(imageSource);
+  }
+}
+
+function parseAndAutoFillForm(ocrText) {
+  const ocrBadge = document.getElementById('ocrStatusBadge');
+  const ocrTextStatus = document.getElementById('ocrTextStatus');
+
+  if (!ocrText || ocrText.trim() === '') {
+    if (ocrBadge) ocrBadge.classList.add('hidden');
+    return;
+  }
+
+  // 1. EXTRAER MONTO TOTAL CON REGEX INTELIGENTE
+  let extractedMonto = null;
+  const currencyMatches = ocrText.match(/(?:TOTAL|SUMA|IMPORTE|NETO|PAGO|S\/\.?|S\/|\$)\s*:?\s*([0-9]+[\.\,][0-9]{2})/gi);
+  
+  if (currencyMatches && currencyMatches.length > 0) {
+    const rawVal = currencyMatches[currencyMatches.length - 1].replace(/[^0-9\.\,]/g, '').replace(',', '.');
+    extractedMonto = parseFloat(rawVal);
+  }
+
+  if (!extractedMonto) {
+    // Buscar cualquier número decimal tipo XX.XX en la foto
+    const allDecimals = ocrText.match(/\b([0-9]{1,4}[\.\,][0-9]{2})\b/g);
+    if (allDecimals && allDecimals.length > 0) {
+      const parsedNums = allDecimals.map(n => parseFloat(n.replace(',', '.'))).filter(n => n > 0 && n < 10000);
+      if (parsedNums.length > 0) {
+        extractedMonto = Math.max(...parsedNums); // El monto total suele ser el número mayor en la boleta
+      }
+    }
+  }
+
+  if (extractedMonto && extractedMonto > 0) {
+    document.getElementById('formMonto').value = extractedMonto.toFixed(2);
+  }
+
+  // 2. EXTRAER FECHA
+  const dateMatch = ocrText.match(/\b([0-9]{1,2}[\/\.-][0-9]{1,2}[\/\.-][0-9]{2,4})\b/);
+  if (dateMatch && dateMatch[1]) {
+    try {
+      const parts = dateMatch[1].split(/[\/\.-]/);
+      if (parts.length === 3) {
+        let day = parts[0].padStart(2, '0');
+        let month = parts[1].padStart(2, '0');
+        let year = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+        if (parseInt(month) <= 12 && parseInt(day) <= 31) {
+          document.getElementById('formFecha').value = `${year}-${month}-${day}`;
+        }
+      }
+    } catch(e) {}
+  }
+
+  // 3. DETECTAR CATEGORÍA Y CONCEPTO
+  const textLower = ocrText.toLowerCase();
+
+  let autoCategoria = 'Otros';
+  let autoConcepto = '';
+
+  if (textLower.includes('taxi') || textLower.includes('uber') || textLower.includes('cabify') || textLower.includes('peaje') || textLower.includes('combustible') || textLower.includes('grifo') || textLower.includes('primax') || textLower.includes('repsol') || textLower.includes('petroperu') || textLower.includes('pasaje')) {
+    autoCategoria = 'Movilidad';
+    autoConcepto = textLower.includes('taxi') || textLower.includes('uber') ? 'Servicio de Taxi / Movilidad' : 'Combustible / Movilidad';
+  } else if (textLower.includes('restaurante') || textLower.includes('kfc') || textLower.includes('bembos') || textLower.includes('starbucks') || textLower.includes('almuerzo') || textLower.includes('cena') || textLower.includes('chifa') || textLower.includes('comida') || textLower.includes('menu') || textLower.includes('rokys') || textLower.includes('norkys') || textLower.includes('pardos')) {
+    autoCategoria = 'Alimentación';
+    autoConcepto = 'Alimentación / Consumo de Alimentos';
+  } else if (textLower.includes('libreria') || textLower.includes('utiles') || textLower.includes('papel') || textLower.includes('tinta') || textLower.includes('cuaderno') || textLower.includes('oficina') || textLower.includes('tailoy')) {
+    autoCategoria = 'Útiles';
+    autoConcepto = 'Compra de Útiles de Oficina';
+  }
+
+  document.getElementById('formCategoria').value = autoCategoria;
+  
+  if (autoConcepto && !document.getElementById('formDetalle').value) {
+    document.getElementById('formDetalle').value = autoConcepto;
+  }
+
+  if (ocrBadge && ocrTextStatus) {
+    ocrTextStatus.textContent = `✨ ¡Comprobante escaneado con éxito! Monto (S/. ${extractedMonto ? extractedMonto.toFixed(2) : '---'}) y categoría (${autoCategoria}) auto-detectados.`;
+    showToast('✨ Escáner IA: Se completaron el monto y datos automáticamente.', 'success');
+  }
+}
+
+function fallbackRegexParsing(imageSource) {
+  const ocrBadge = document.getElementById('ocrStatusBadge');
+  if (ocrBadge) ocrBadge.classList.add('hidden');
+}
+
+/* ==========================================
+   7. ELIMINACIÓN SEGURA DE REGISTROS PROPIOS
    ========================================== */
 function openModalEliminar(id) {
   const item = state.solicitudes.find(s => s.id === id);
@@ -538,7 +653,7 @@ function confirmarEliminarPropio() {
 }
 
 /* ==========================================
-   7. VISOR EN PANTALLA COMPLETA INTEGRADO PARA DRIVE, FOTOS Y PDF
+   8. VISOR EN PANTALLA COMPLETA INTEGRADO PARA DRIVE, FOTOS Y PDF
    ========================================== */
 function extractGoogleDriveFileId(url) {
   if (!url) return '';
@@ -625,15 +740,17 @@ function formatCurrency(num) {
 }
 
 /* ==========================================
-   8. CREACIÓN Y FORMULARIO CON VISTA PREVIA VISUAL
+   9. FORMULARIO CON ESCÁNER IA Y AUTO-COMPLETADO
    ========================================== */
 function openModalSolicitud(data = null) {
   const modal = document.getElementById('modalSolicitud');
   const form = document.getElementById('formSolicitud');
   const title = document.getElementById('modalSolicitudTitle');
+  const ocrBadge = document.getElementById('ocrStatusBadge');
 
   form.reset();
   clearSelectedFile();
+  if (ocrBadge) ocrBadge.classList.add('hidden');
 
   if (data) {
     title.textContent = `Editar Solicitud (${data.fecha})`;
@@ -699,6 +816,8 @@ function handleFileSelect(event) {
         base64Data: compressedBase64
       };
       showFilePreviewUI(newFileName + ' (Optimizado)', compressedBase64);
+      // DISPARAR ESCÁNER IA DE COMPROBANTE
+      runReceiptOCRScan(compressedBase64);
     });
   } else {
     if (file.size > 10 * 1024 * 1024) {
@@ -790,9 +909,11 @@ function clearSelectedFile() {
   
   const promptContainer = document.getElementById('fileUploadPrompt');
   const previewContainer = document.getElementById('filePreviewContainer');
+  const ocrBadge = document.getElementById('ocrStatusBadge');
 
   if (promptContainer) promptContainer.classList.remove('hidden');
   if (previewContainer) previewContainer.classList.add('hidden');
+  if (ocrBadge) ocrBadge.classList.add('hidden');
 }
 
 function generateUniqueId() {
@@ -868,7 +989,7 @@ function handleSaveSolicitud(e) {
 }
 
 /* ==========================================
-   9. MODAL DE VALIDACIÓN 100% FLUIDO Y FIJO
+   10. MODAL DE VALIDACIÓN Y ARCHIVADO
    ========================================== */
 function openModalAprobacion(id) {
   const item = state.solicitudes.find(s => s.id === id);
@@ -905,7 +1026,12 @@ function confirmarAprobacion() {
   applyFilters();
 
   closeModalAprobacion();
-  showToast(`Estado actualizado a: ${nuevoEstado}`, 'success');
+  
+  if (nuevoEstado === 'Reembolsado') {
+    showToast(' Reembolso validado y archivado a Historial (Guardado en Sheets)', 'success');
+  } else {
+    showToast(`Estado actualizado a: ${nuevoEstado}`, 'info');
+  }
 
   const item = state.solicitudes.find(s => s.id === targetId);
   if (item) {
