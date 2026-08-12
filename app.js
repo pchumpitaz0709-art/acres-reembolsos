@@ -495,67 +495,109 @@ function runReceiptOCRScan(rawBase64) {
 
   if (ocrBadge) {
     ocrBadge.classList.remove('hidden');
-    ocrTextStatus.textContent = '🔍 Enviando a Google para lectura de comprobante...';
+    ocrTextStatus.textContent = '🔍 Analizando comprobante con Google...';
     if (ocrIcon) ocrIcon.className = 'w-4 h-4 text-sky-500 animate-spin flex-shrink-0';
   }
 
-  // ESTRATEGIA A: Google Drive OCR (misma calidad que Google Lens - gratis)
-  sendToGoogleDriveOCR(rawBase64)
-    .then(text => {
-      if (text && text.trim().length > 15) {
-        parseAndAutoFillForm(text, 'Google Drive OCR');
-      } else {
-        // ESTRATEGIA B: Tesseract multi-pasada si Drive OCR falla
-        runTesseractMultiPass(rawBase64);
-      }
-    })
-    .catch(() => {
-      runTesseractMultiPass(rawBase64);
-    });
-}
-
-// Envía imagen al Apps Script que usa Google Drive OCR (gratuito, nivel profesional)
-function sendToGoogleDriveOCR(rawBase64) {
-  return fetch(API_URL, {
-    method: 'POST',
-    body: JSON.stringify({
-      action: 'ocrImage',
-      imageBase64: rawBase64
-    })
-  })
-  .then(res => res.json())
-  .then(data => {
-    if (data && data.status === 'success' && data.text) {
-      return data.text;
-    }
-    return '';
+  // Comprimir a imagen PEQUEÑA para OCR (no necesitamos alta resolución para leer texto)
+  // 600px ancho, escala de grises, calidad 0.5 → ~25KB, ideal para enviar al servidor
+  compressForOCR(rawBase64).then(smallBase64 => {
+    // ESTRATEGIA A: Google Drive OCR vía Apps Script (calidad Google Lens)
+    sendToGoogleDriveOCR(smallBase64)
+      .then(text => {
+        if (text && text.trim().length > 15) {
+          parseAndAutoFillForm(text, 'Google Drive OCR');
+        } else {
+          // ESTRATEGIA B: Tesseract local con múltiples pasadas
+          runTesseractMultiPass(smallBase64, rawBase64);
+        }
+      })
+      .catch(() => {
+        runTesseractMultiPass(smallBase64, rawBase64);
+      });
   });
 }
 
-// Estrategia B: Tesseract con múltiples umbrales de binarización y re-intento
-function runTesseractMultiPass(rawBase64) {
+// Comprime imagen a versión pequeña en escala de grises optimizada para OCR
+function compressForOCR(base64Image) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      const MAX_W = 900; // 900px es suficiente para que Tesseract/Drive lean texto
+      let w = img.width;
+      let h = img.height;
+      if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+
+      // Aplicar filtro de mejora de contraste antes de dibujar
+      ctx.filter = 'contrast(1.4) brightness(1.1) saturate(0)';
+      ctx.drawImage(img, 0, 0, w, h);
+
+      // Convertir a escala de grises con binarización suave
+      const imgData = ctx.getImageData(0, 0, w, h);
+      const d = imgData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const lum = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
+        // Binarización suave: texto oscuro se pone negro, fondo claro se pone blanco
+        const v = lum < 160 ? Math.max(0, lum - 30) : Math.min(255, lum + 20);
+        d[i] = d[i+1] = d[i+2] = v;
+      }
+      ctx.putImageData(imgData, 0, 0);
+      resolve(canvas.toDataURL('image/jpeg', 0.55));
+    };
+    img.onerror = () => resolve(base64Image);
+    img.src = base64Image;
+  });
+}
+
+// Envía imagen pequeña al Apps Script para Drive OCR (tamaño ~25KB, sin timeout)
+function sendToGoogleDriveOCR(smallBase64) {
+  return Promise.race([
+    fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        action: 'ocrImage',
+        imageBase64: smallBase64
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data && data.status === 'success' && data.text) {
+        return data.text;
+      }
+      return '';
+    }),
+    // Timeout de 15 segundos — si tarda más, usar Tesseract
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
+  ]);
+}
+
+// Estrategia B: Tesseract con múltiples umbrales — usa imagen pequeña (ya comprimida)
+function runTesseractMultiPass(smallBase64, rawBase64) {
   const ocrTextStatus = document.getElementById('ocrTextStatus');
-  if (ocrTextStatus) ocrTextStatus.textContent = '🔍 Procesando imagen localmente con IA...';
+  if (ocrTextStatus) ocrTextStatus.textContent = '🔍 Leyendo comprobante con IA local...';
 
   if (!window.Tesseract) {
     updateOCRBadgeError();
     return;
   }
 
-  // Generar 3 versiones de la imagen con distintos contrastes
+  // Generar versión con umbral alto y versión original pequeña
   Promise.all([
-    preprocessCanvas(rawBase64, 'adaptive'),   // Umbral adaptativo
-    preprocessCanvas(rawBase64, 'high'),        // Alto contraste (papel térmico)
-    preprocessCanvas(rawBase64, 'original')     // Original sin cambios
-  ]).then(([adaptiveB64, highB64, originalB64]) => {
-    // Correr OCR en paralelo en las 3 versiones
+    preprocessCanvas(smallBase64, 'high'),
+    preprocessCanvas(smallBase64, 'adaptive')
+  ]).then(([highB64, adaptiveB64]) => {
     return Promise.all([
-      Tesseract.recognize(adaptiveB64, 'spa').then(r => r.data.text).catch(() => ''),
+      Tesseract.recognize(smallBase64, 'spa').then(r => r.data.text).catch(() => ''),
       Tesseract.recognize(highB64, 'spa').then(r => r.data.text).catch(() => ''),
-      Tesseract.recognize(originalB64, 'spa').then(r => r.data.text).catch(() => '')
+      Tesseract.recognize(adaptiveB64, 'spa').then(r => r.data.text).catch(() => '')
     ]);
   }).then(([text1, text2, text3]) => {
-    // Elegir el resultado con más texto reconocido
+    // Combinar todos los textos y elegir el más largo
     const best = [text1, text2, text3].reduce((a, b) => a.length >= b.length ? a : b, '');
     if (best.trim().length > 10) {
       parseAndAutoFillForm(best, 'Tesseract IA');
@@ -651,44 +693,7 @@ function updateOCRBadgeError() {
   if (ocrIcon) ocrIcon.className = 'w-4 h-4 text-amber-500 flex-shrink-0';
 }
 
-function preprocessImageForOCR(base64Image, callback) {
-  const img = new Image();
-  img.onload = function() {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-
-    let width = img.width;
-    let height = img.height;
-    const targetWidth = 1600;
-    if (width > 0) {
-      height = Math.round((height * targetWidth) / width);
-      width = targetWidth;
-    }
-    canvas.width = width;
-    canvas.height = height;
-
-    ctx.drawImage(img, 0, 0, width, height);
-
-    // Filtro Grayscale + Binarización de alto contraste para papel térmico
-    const imgData = ctx.getImageData(0, 0, width, height);
-    const d = imgData.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const avg = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114);
-      const v = avg < 140 ? 0 : 255;
-      d[i] = v;
-      d[i + 1] = v;
-      d[i + 2] = v;
-    }
-    ctx.putImageData(imgData, 0, 0);
-
-    const processedBase64 = canvas.toDataURL('image/jpeg', 0.9);
-    callback(processedBase64);
-  };
-  img.onerror = function() {
-    callback(base64Image);
-  };
-  img.src = base64Image;
-}
+// (función legacy eliminada — reemplazada por compressForOCR)
 
 /* ==========================================
    PARSER INTELIGENTE DE COMPROBANTES PERUANOS
@@ -794,6 +799,40 @@ function parseAndAutoFillForm(ocrText, method) {
     if (allNums.length > 0) {
       extractedMonto = Math.max(...allNums);
       montoSource = 'Máximo global';
+    }
+  }
+
+  // ESTRATEGIA 6 (MATEMÁTICA): Si A + B = C → C es el TOTAL
+  // Funciona aunque OCR no lea la palabra "TOTAL" — pura aritmética con los números detectados
+  // Ejemplo: 29.66 + 17.90 = 47.56 ✅  (Boleta PRODIFER)
+  {
+    const allDecimalsRaw = [...allText.matchAll(/\b([0-9]{1,6}[\.,][0-9]{2})\b/g)]
+      .map(m => Math.round(parseFloat(m[1].replace(',', '.')) * 100)) // en centavos enteros
+      .filter(v => v > 50 && v < 9999900); // entre 0.50 y 99999
+
+    const uniqueNums = [...new Set(allDecimalsRaw)].sort((a, b) => a - b);
+
+    let sumCandidate = null;
+
+    // Buscar si algún número es suma de 2 o más números detectados
+    for (let i = 0; i < uniqueNums.length; i++) {
+      for (let j = i; j < uniqueNums.length; j++) {
+        const partial = uniqueNums[i] + uniqueNums[j];
+        // Buscar si esa suma existe en la lista (tolerancia ±2 centavos por redondeo OCR)
+        const found = uniqueNums.find(n => Math.abs(n - partial) <= 2 && n > uniqueNums[i] && n > uniqueNums[j]);
+        if (found) {
+          const candidateMonto = found / 100;
+          // Preferir este resultado si es mayor o igual al extractedMonto actual
+          if (!extractedMonto || candidateMonto >= extractedMonto) {
+            sumCandidate = candidateMonto;
+          }
+        }
+      }
+    }
+
+    if (sumCandidate && sumCandidate > 0) {
+      extractedMonto = sumCandidate;
+      montoSource = 'Verificación matemática (A+B=Total)';
     }
   }
 
