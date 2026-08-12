@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Integración de Escáner IA OCR (Tesseract.js) + Archivado Automático de Reembolsados
+ * Escáner OCR Avanzado con Pre-procesamiento de Contraste y Parser SUNAT Perú
  * ==============================================================================
  */
 
@@ -265,7 +265,7 @@ function applyFilters() {
     const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
     const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
 
-    // VISTA PRINCIPAL (TODOS / PENDIENTES ACTIVOS): Oculta automáticamente los que ya fueron Reembolsados
+    // VISTA PRINCIPAL: Oculta los ya Reembolsados para mantener pantalla limpia
     if (state.currentTab === 'TODOS' && item.estado === 'Reembolsado') {
       return false;
     }
@@ -274,7 +274,7 @@ function applyFilters() {
       return false;
     }
 
-    // PESTAÑA HISTORIAL (REEMBOLSADOS): Muestra solo los archivados pagados
+    // PESTAÑA HISTORIAL: Muestra los archivados pagados
     if (state.currentTab === 'Reembolsado' && item.estado !== 'Reembolsado') {
       return false;
     }
@@ -482,30 +482,75 @@ function renderDataView(items) {
 }
 
 /* ==========================================
-   6. LECTURA AUTOMÁTICA DE FOTOS CON ESCÁNER IA (OCR TESSERACT)
+   6. LECTURA AUTOMÁTICA DE FOTOS CON PRE-PROCESADOR DE CONTRASITE Y PARSER SUNAT
    ========================================== */
-function runReceiptOCRScan(imageSource) {
+function runReceiptOCRScan(rawBase64) {
   const ocrBadge = document.getElementById('ocrStatusBadge');
   const ocrTextStatus = document.getElementById('ocrTextStatus');
   const ocrIcon = document.getElementById('ocrIcon');
 
   if (ocrBadge) {
     ocrBadge.classList.remove('hidden');
-    ocrTextStatus.textContent = '✨ Escaneando comprobante con IA... Leyendo monto, fecha y concepto.';
+    ocrTextStatus.textContent = '✨ Optimizando imagen y escaneando comprobante con IA...';
     ocrIcon.className = 'w-4 h-4 text-sky-500 animate-spin flex-shrink-0';
   }
 
-  if (window.Tesseract) {
-    Tesseract.recognize(imageSource, 'spa', {
-      logger: m => {}
-    }).then(({ data: { text } }) => {
-      parseAndAutoFillForm(text);
-    }).catch(err => {
-      fallbackRegexParsing(imageSource);
-    });
-  } else {
-    fallbackRegexParsing(imageSource);
-  }
+  // Pre-procesar imagen para mejorar nitidez de impresión térmica
+  preprocessImageForOCR(rawBase64, (enhancedBase64) => {
+    if (window.Tesseract) {
+      Tesseract.recognize(enhancedBase64, 'spa', {
+        logger: m => {}
+      }).then(({ data: { text } }) => {
+        parseAndAutoFillForm(text);
+      }).catch(err => {
+        // Re-intento con imagen original si falla
+        Tesseract.recognize(rawBase64, 'spa').then(({ data: { text } }) => {
+          parseAndAutoFillForm(text);
+        }).catch(() => fallbackRegexParsing());
+      });
+    } else {
+      fallbackRegexParsing();
+    }
+  });
+}
+
+function preprocessImageForOCR(base64Image, callback) {
+  const img = new Image();
+  img.onload = function() {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    let width = img.width;
+    let height = img.height;
+    const targetWidth = 1600;
+    if (width > 0) {
+      height = Math.round((height * targetWidth) / width);
+      width = targetWidth;
+    }
+    canvas.width = width;
+    canvas.height = height;
+
+    ctx.drawImage(img, 0, 0, width, height);
+
+    // Filtro Grayscale + Binarización de alto contraste para papel térmico
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const avg = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114);
+      const v = avg < 140 ? 0 : 255;
+      d[i] = v;
+      d[i + 1] = v;
+      d[i + 2] = v;
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    const processedBase64 = canvas.toDataURL('image/jpeg', 0.9);
+    callback(processedBase64);
+  };
+  img.onerror = function() {
+    callback(base64Image);
+  };
+  img.src = base64Image;
 }
 
 function parseAndAutoFillForm(ocrText) {
@@ -517,22 +562,53 @@ function parseAndAutoFillForm(ocrText) {
     return;
   }
 
-  // 1. EXTRAER MONTO TOTAL CON REGEX INTELIGENTE
+  const lines = ocrText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+  // 1. EXTRACCIÓN MULTI-PASO DEL MONTO TOTAL (SUNAT / BOLETAS PERÚ)
   let extractedMonto = null;
-  const currencyMatches = ocrText.match(/(?:TOTAL|SUMA|IMPORTE|NETO|PAGO|S\/\.?|S\/|\$)\s*:?\s*([0-9]+[\.\,][0-9]{2})/gi);
-  
-  if (currencyMatches && currencyMatches.length > 0) {
-    const rawVal = currencyMatches[currencyMatches.length - 1].replace(/[^0-9\.\,]/g, '').replace(',', '.');
-    extractedMonto = parseFloat(rawVal);
+
+  // Paso A: Buscar línea con "TOTAL S/ 47.56" o "TOTAL: 47.56"
+  for (let line of lines) {
+    const totalLineMatch = line.match(/(?:TOTAL|IMPORTE\s*TOTAL|TOTAL\s*A\s*PAGAR)\s*(?:S\/\.?:?|S\/|S|\$)?\s*:?\s*([0-9]+[\.\,][0-9]{2})/i);
+    if (totalLineMatch && totalLineMatch[1]) {
+      extractedMonto = parseFloat(totalLineMatch[1].replace(',', '.'));
+      break;
+    }
   }
 
+  // Paso B: Buscar expresión en letras tipo "SON: CUARENTA Y SIETE CON 56/100 SOLES"
   if (!extractedMonto) {
-    // Buscar cualquier número decimal tipo XX.XX en la foto
+    const textInWordsMatch = ocrText.match(/SON\s*:?\s*.*?\b([0-9]{1,2})\/100/i);
+    if (textInWordsMatch && textInWordsMatch[1]) {
+      const centimos = textInWordsMatch[1];
+      // Buscar monto decimal que termine con esos céntimos
+      const regexCentimos = new RegExp(`\\b([0-9]+[\\.\\,]${centimos})\\b`);
+      const centimoMatch = ocrText.match(regexCentimos);
+      if (centimoMatch && centimoMatch[1]) {
+        extractedMonto = parseFloat(centimoMatch[1].replace(',', '.'));
+      }
+    }
+  }
+
+  // Paso C: Si no se halló la palabra TOTAL explícita, buscar en el 30% final del comprobante
+  if (!extractedMonto) {
+    const bottomText = lines.slice(Math.floor(lines.length * 0.6)).join(' ');
+    const allBottomDecimals = bottomText.match(/\b([0-9]{1,4}[\.\,][0-9]{2})\b/g);
+    if (allBottomDecimals && allBottomDecimals.length > 0) {
+      const parsed = allBottomDecimals.map(n => parseFloat(n.replace(',', '.'))).filter(n => n > 0 && n < 20000);
+      if (parsed.length > 0) {
+        extractedMonto = Math.max(...parsed); // El monto total siempre es el valor final más alto
+      }
+    }
+  }
+
+  // Paso D: Fallback general si aún no se halló
+  if (!extractedMonto) {
     const allDecimals = ocrText.match(/\b([0-9]{1,4}[\.\,][0-9]{2})\b/g);
     if (allDecimals && allDecimals.length > 0) {
-      const parsedNums = allDecimals.map(n => parseFloat(n.replace(',', '.'))).filter(n => n > 0 && n < 10000);
-      if (parsedNums.length > 0) {
-        extractedMonto = Math.max(...parsedNums); // El monto total suele ser el número mayor en la boleta
+      const parsed = allDecimals.map(n => parseFloat(n.replace(',', '.'))).filter(n => n > 0 && n < 20000);
+      if (parsed.length > 0) {
+        extractedMonto = Math.max(...parsed);
       }
     }
   }
@@ -541,11 +617,26 @@ function parseAndAutoFillForm(ocrText) {
     document.getElementById('formMonto').value = extractedMonto.toFixed(2);
   }
 
-  // 2. EXTRAER FECHA
-  const dateMatch = ocrText.match(/\b([0-9]{1,2}[\/\.-][0-9]{1,2}[\/\.-][0-9]{2,4})\b/);
-  if (dateMatch && dateMatch[1]) {
+  // 2. EXTRACCIÓN DE FECHA REAL DE EMISIÓN (Ej. "FECHA EMISION: 15/07/2026")
+  let extractedFecha = null;
+  for (let line of lines) {
+    const dateMatch = line.match(/(?:FECHA|EMISION|FEC\.?)\s*:?\s*([0-9]{1,2}[\/\.-][0-9]{1,2}[\/\.-][0-9]{2,4})/i);
+    if (dateMatch && dateMatch[1]) {
+      extractedFecha = dateMatch[1];
+      break;
+    }
+  }
+
+  if (!extractedFecha) {
+    const anyDateMatch = ocrText.match(/\b([0-9]{1,2}[\/\.-][0-9]{1,2}[\/\.-][0-9]{2,4})\b/);
+    if (anyDateMatch && anyDateMatch[1]) {
+      extractedFecha = anyDateMatch[1];
+    }
+  }
+
+  if (extractedFecha) {
     try {
-      const parts = dateMatch[1].split(/[\/\.-]/);
+      const parts = extractedFecha.split(/[\/\.-]/);
       if (parts.length === 3) {
         let day = parts[0].padStart(2, '0');
         let month = parts[1].padStart(2, '0');
@@ -557,36 +648,44 @@ function parseAndAutoFillForm(ocrText) {
     } catch(e) {}
   }
 
-  // 3. DETECTAR CATEGORÍA Y CONCEPTO
+  // 3. EXTRACCIÓN DE RAZÓN SOCIAL / CONCEPTO DE COMPRA
   const textLower = ocrText.toLowerCase();
 
   let autoCategoria = 'Otros';
-  let autoConcepto = '';
+  let autoRazonSocial = '';
 
-  if (textLower.includes('taxi') || textLower.includes('uber') || textLower.includes('cabify') || textLower.includes('peaje') || textLower.includes('combustible') || textLower.includes('grifo') || textLower.includes('primax') || textLower.includes('repsol') || textLower.includes('petroperu') || textLower.includes('pasaje')) {
+  // Buscar Razón Social o Empresa en el encabezado
+  if (lines.length > 0) {
+    const firstHeaderLines = lines.slice(0, 4).join(' ');
+    const rucMatch = ocrText.match(/(?:RUC|BOLETA|FACTURA|PRODIFER|PRIMAX|REPSOL|TAXI|KFC|STARBUCKS|TAILOY|LIBRERIA)\b[^\n]*/i);
+    if (rucMatch) {
+      autoRazonSocial = rucMatch[0].trim();
+    } else {
+      autoRazonSocial = lines[0];
+    }
+  }
+
+  if (textLower.includes('libreria') || textLower.includes('utiles') || textLower.includes('papel') || textLower.includes('toalla') || textLower.includes('tinta') || textLower.includes('cuaderno') || textLower.includes('oficina') || textLower.includes('tailoy') || textLower.includes('prodifer')) {
+    autoCategoria = 'Útiles';
+  } else if (textLower.includes('taxi') || textLower.includes('uber') || textLower.includes('cabify') || textLower.includes('peaje') || textLower.includes('combustible') || textLower.includes('grifo') || textLower.includes('primax') || textLower.includes('repsol') || textLower.includes('petroperu') || textLower.includes('pasaje')) {
     autoCategoria = 'Movilidad';
-    autoConcepto = textLower.includes('taxi') || textLower.includes('uber') ? 'Servicio de Taxi / Movilidad' : 'Combustible / Movilidad';
   } else if (textLower.includes('restaurante') || textLower.includes('kfc') || textLower.includes('bembos') || textLower.includes('starbucks') || textLower.includes('almuerzo') || textLower.includes('cena') || textLower.includes('chifa') || textLower.includes('comida') || textLower.includes('menu') || textLower.includes('rokys') || textLower.includes('norkys') || textLower.includes('pardos')) {
     autoCategoria = 'Alimentación';
-    autoConcepto = 'Alimentación / Consumo de Alimentos';
-  } else if (textLower.includes('libreria') || textLower.includes('utiles') || textLower.includes('papel') || textLower.includes('tinta') || textLower.includes('cuaderno') || textLower.includes('oficina') || textLower.includes('tailoy')) {
-    autoCategoria = 'Útiles';
-    autoConcepto = 'Compra de Útiles de Oficina';
   }
 
   document.getElementById('formCategoria').value = autoCategoria;
   
-  if (autoConcepto && !document.getElementById('formDetalle').value) {
-    document.getElementById('formDetalle').value = autoConcepto;
+  if (autoRazonSocial && !document.getElementById('formDetalle').value) {
+    document.getElementById('formDetalle').value = `${autoRazonSocial.slice(0, 60)} (${autoCategoria})`;
   }
 
   if (ocrBadge && ocrTextStatus) {
-    ocrTextStatus.textContent = `✨ ¡Comprobante escaneado con éxito! Monto (S/. ${extractedMonto ? extractedMonto.toFixed(2) : '---'}) y categoría (${autoCategoria}) auto-detectados.`;
-    showToast('✨ Escáner IA: Se completaron el monto y datos automáticamente.', 'success');
+    ocrTextStatus.textContent = `✨ ¡Lectura SUNAT Exitosa! Monto Total: S/. ${extractedMonto ? extractedMonto.toFixed(2) : '---'} • Categoría: ${autoCategoria}`;
+    showToast(`✨ Escáner IA: Se detectó el Monto Total (S/. ${extractedMonto ? extractedMonto.toFixed(2) : '---'}) de la boleta.`, 'success');
   }
 }
 
-function fallbackRegexParsing(imageSource) {
+function fallbackRegexParsing() {
   const ocrBadge = document.getElementById('ocrStatusBadge');
   if (ocrBadge) ocrBadge.classList.add('hidden');
 }
@@ -816,7 +915,7 @@ function handleFileSelect(event) {
         base64Data: compressedBase64
       };
       showFilePreviewUI(newFileName + ' (Optimizado)', compressedBase64);
-      // DISPARAR ESCÁNER IA DE COMPROBANTE
+      // DISPARAR ESCÁNER IA DE COMPROBANTE CON PRE-PROCESADOR DE CONTRASITE
       runReceiptOCRScan(compressedBase64);
     });
   } else {
@@ -1028,7 +1127,7 @@ function confirmarAprobacion() {
   closeModalAprobacion();
   
   if (nuevoEstado === 'Reembolsado') {
-    showToast(' Reembolso validado y archivado a Historial (Guardado en Sheets)', 'success');
+    showToast('Reembolso validado y archivado a Historial (Guardado en Sheets)', 'success');
   } else {
     showToast(`Estado actualizado a: ${nuevoEstado}`, 'info');
   }
