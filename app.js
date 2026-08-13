@@ -10,6 +10,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxSwjdAFaSexlKXCoWZWqnI
 
 // LISTA DE CORREOS AUTORIZADOS PARA ACCEDER AL MODO ADMINISTRADOR PRIVILEGIADO:
 const AUTHORIZED_ADMIN_EMAILS = [
+  'mchumpitaz@acres-finance.com',
   'conomun01@gmail.com',
   'mau26.cristina@gmail.com',
   'admin@acres.com',
