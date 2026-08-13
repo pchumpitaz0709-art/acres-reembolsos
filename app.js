@@ -6,7 +6,7 @@
  */
 
 // URL AUTÉNTICA DE TU GOOGLE APPS SCRIPT DATABASE API:
-const API_URL = 'https://script.google.com/macros/s/AKfycbyDn1wgSqxdE7aQ_SNTCOjSSP7K-lu1rYNb8lG5FyRL9D06ZNjI0XbBoYmBj27Nhbf4/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxSwjdAFaSexlKXCoWZWqnIKiJozfhB0O0WhWLlfHSukzN30gXpNCiMuAbIMsmG-6-h/exec';
 
 let state = {
   currentUserEmail: '',
