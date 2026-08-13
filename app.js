@@ -8,6 +8,14 @@
 // URL AUTÉNTICA DE TU GOOGLE APPS SCRIPT DATABASE API:
 const API_URL = 'https://script.google.com/macros/s/AKfycbxSwjdAFaSexlKXCoWZWqnIKiJozfhB0O0WhWLlfHSukzN30gXpNCiMuAbIMsmG-6-h/exec';
 
+// LISTA DE CORREOS AUTORIZADOS PARA ACCEDER AL MODO ADMINISTRADOR PRIVILEGIADO:
+const AUTHORIZED_ADMIN_EMAILS = [
+  'conomun01@gmail.com',
+  'mau26.cristina@gmail.com',
+  'admin@acres.com',
+  'pablo@acres.com'
+];
+
 let state = {
   currentUserEmail: '',
   currentUserPicture: '',
@@ -17,7 +25,6 @@ let state = {
   selectedAprobacionId: null,
   selectedEliminarId: null,
   isPrivileged: false,
-  adminEmails: ['conomun01@gmail.com', 'mau26.cristina@gmail.com', 'admin@acres.com', 'pablo@acres.com'],
   monthlyCap: parseFloat(localStorage.getItem('acres_monthly_cap')) || 500.00,
   selectedMonth: 'TODOS'
 };
@@ -110,11 +117,11 @@ function showDashboardView() {
 
   document.getElementById('formSolicitante').value = state.currentUserEmail;
 
-  // CONTROL DE ROL Y MODO PRIVILEGIADO (ADMINISTRADOR VS USUARIO NORMAL)
+  // VERIFICACIÓN ESTRICTA DE CORREOS AUTORIZADOS
   const userEmail = (state.currentUserEmail || '').toLowerCase().trim();
-  const isAdminSaved = localStorage.getItem('acres_admin_override') === 'true';
-  const isAdminEmail = state.adminEmails.map(e => e.toLowerCase().trim()).includes(userEmail);
-  state.isPrivileged = isAdminEmail || isAdminSaved;
+  const isAuthorizedAdmin = AUTHORIZED_ADMIN_EMAILS.map(e => e.toLowerCase().trim()).includes(userEmail);
+  
+  state.isPrivileged = isAuthorizedAdmin;
 
   updateRoleUI();
 }
@@ -122,6 +129,7 @@ function showDashboardView() {
 function updateRoleUI() {
   const badge = document.getElementById('userRoleBadge');
   const btnEditCap = document.getElementById('btnEditCap');
+  const adminDropdownBtn = document.getElementById('adminDropdownBtn');
   
   if (badge) {
     if (state.isPrivileged) {
@@ -138,6 +146,17 @@ function updateRoleUI() {
       btnEditCap.classList.remove('hidden');
     } else {
       btnEditCap.classList.add('hidden');
+    }
+  }
+
+  // MOSTRAR U OCULTAR LA OPCIÓN DE ADMIN EN EL MENÚ DESPLEGABLE SOLO A AUTORIZADOS
+  if (adminDropdownBtn) {
+    const userEmail = (state.currentUserEmail || '').toLowerCase().trim();
+    const isAuthorized = AUTHORIZED_ADMIN_EMAILS.map(e => e.toLowerCase().trim()).includes(userEmail);
+    if (isAuthorized) {
+      adminDropdownBtn.classList.remove('hidden');
+    } else {
+      adminDropdownBtn.classList.add('hidden');
     }
   }
 }
