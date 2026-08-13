@@ -318,50 +318,48 @@ function setTabFilter(tabName) {
   applyFilters();
 }
 
-function populateMonthFilter() {
-  const monthSelect = document.getElementById('monthFilter');
-  if (!monthSelect) return;
+function handleQuickDateChange() {
+  const quick = document.getElementById('dateQuickFilter') ? document.getElementById('dateQuickFilter').value : 'TODOS';
+  const startInput = document.getElementById('dateStart');
+  const endInput = document.getElementById('dateEnd');
 
-  const currentVal = monthSelect.value || 'TODOS';
-  const monthsSet = new Set();
+  if (!startInput || !endInput) return;
+
+  const now = new Date();
   
-  const nowStr = new Date().toISOString().slice(0, 7);
-  monthsSet.add(nowStr);
+  if (quick === 'TODOS') {
+    startInput.value = '';
+    endInput.value = '';
+  } else if (quick === 'ESTE_MES') {
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
+    startInput.value = `${year}-${month}-01`;
+    endInput.value = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+  } else if (quick === 'MES_ANTERIOR') {
+    const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const year = prevDate.getFullYear();
+    const month = String(prevDate.getMonth() + 1).padStart(2, '0');
+    const lastDay = new Date(year, prevDate.getMonth() + 1, 0).getDate();
+    startInput.value = `${year}-${month}-01`;
+    endInput.value = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+  }
 
-  state.solicitudes.forEach(item => {
-    if (item.fecha && item.fecha.length >= 7) {
-      const mStr = item.fecha.slice(0, 7);
-      if (/^\d{4}-\d{2}$/.test(mStr)) {
-        monthsSet.add(mStr);
-      }
-    }
-  });
+  applyFilters();
+}
 
-  const sortedMonths = Array.from(monthsSet).sort().reverse();
-  
-  let html = `<option value="TODOS">Todos los Meses</option>`;
-  sortedMonths.forEach(m => {
-    const parts = m.split('-');
-    const year = parts[0];
-    const monthNum = parseInt(parts[1], 10);
-    const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-    const monthName = monthNames[monthNum - 1] || m;
-    html += `<option value="${m}">${monthName} ${year}</option>`;
-  });
-
-  monthSelect.innerHTML = html;
-  monthSelect.value = currentVal;
+function handleCustomDateChange() {
+  const quickSelect = document.getElementById('dateQuickFilter');
+  if (quickSelect) quickSelect.value = 'CUSTOM';
+  applyFilters();
 }
 
 function applyFilters() {
-  populateMonthFilter();
-
   const searchText = (document.getElementById('searchInput').value || '').toLowerCase().trim();
   const selectedCategoria = document.getElementById('categoriaFilter').value;
-  const monthSelect = document.getElementById('monthFilter');
-  const selectedMonth = monthSelect ? monthSelect.value : 'TODOS';
   
-  state.selectedMonth = selectedMonth;
+  const dateStart = document.getElementById('dateStart') ? document.getElementById('dateStart').value : '';
+  const dateEnd = document.getElementById('dateEnd') ? document.getElementById('dateEnd').value : '';
 
   const filtered = state.solicitudes.filter(item => {
     const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
@@ -372,11 +370,12 @@ function applyFilters() {
       return false;
     }
 
-    // FILTRO MENSUALIZADO:
-    if (selectedMonth !== 'TODOS') {
-      if (!item.fecha || !item.fecha.startsWith(selectedMonth)) {
-        return false;
-      }
+    // FILTRO DE CALENDARIO / RANGO DE FECHAS (DESDE / HASTA)
+    if (dateStart !== '' && item.fecha < dateStart) {
+      return false;
+    }
+    if (dateEnd !== '' && item.fecha > dateEnd) {
+      return false;
     }
 
     // PESTAÑAS
@@ -408,6 +407,7 @@ function applyFilters() {
   });
 
   renderDataView(filtered);
+  updateKPIs();
   updateMonthlyCapUI();
 }
 
@@ -422,7 +422,8 @@ function updateKPIs() {
   let misCount = 0;
 
   const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
-  const selectedMonth = state.selectedMonth;
+  const dateStart = document.getElementById('dateStart') ? document.getElementById('dateStart').value : '';
+  const dateEnd = document.getElementById('dateEnd') ? document.getElementById('dateEnd').value : '';
 
   state.solicitudes.forEach(item => {
     const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
@@ -432,12 +433,9 @@ function updateKPIs() {
       return;
     }
 
-    // Aplicar filtro por mes a los KPIs si está seleccionado un mes
-    if (selectedMonth !== 'TODOS') {
-      if (!item.fecha || !item.fecha.startsWith(selectedMonth)) {
-        return;
-      }
-    }
+    // Aplicar filtro de fecha a los KPIs si hay rango seleccionado
+    if (dateStart !== '' && item.fecha < dateStart) return;
+    if (dateEnd !== '' && item.fecha > dateEnd) return;
 
     const monto = parseFloat(item.monto) || 0;
     totalMonto += monto;
@@ -472,15 +470,23 @@ function updateKPIs() {
 
 function updateMonthlyCapUI() {
   const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
+  const dateStart = document.getElementById('dateStart') ? document.getElementById('dateStart').value : '';
+  const dateEnd = document.getElementById('dateEnd') ? document.getElementById('dateEnd').value : '';
   const nowMonthStr = new Date().toISOString().slice(0, 7);
-  const targetMonth = state.selectedMonth !== 'TODOS' ? state.selectedMonth : nowMonthStr;
 
   let monthTotalUser = 0;
   state.solicitudes.forEach(item => {
     const itemEmailClean = (item.solicitante || '').toLowerCase().trim();
-    if (itemEmailClean === currentEmailClean && item.fecha && item.fecha.startsWith(targetMonth)) {
-      monthTotalUser += (parseFloat(item.monto) || 0);
+    if (itemEmailClean !== currentEmailClean) return;
+
+    if (dateStart !== '' || dateEnd !== '') {
+      if (dateStart !== '' && item.fecha < dateStart) return;
+      if (dateEnd !== '' && item.fecha > dateEnd) return;
+    } else {
+      if (!item.fecha || !item.fecha.startsWith(nowMonthStr)) return;
     }
+
+    monthTotalUser += (parseFloat(item.monto) || 0);
   });
 
   const cap = state.monthlyCap;
@@ -492,7 +498,9 @@ function updateMonthlyCapUI() {
   const barElem = document.getElementById('monthlyCapProgressBar');
 
   if (displayCapElem) displayCapElem.textContent = formatCurrency(cap);
-  if (progressTextElem) progressTextElem.textContent = `${formatCurrency(monthTotalUser)} de ${formatCurrency(cap)} consumidos este mes (${targetMonth})`;
+  
+  const periodLabel = (dateStart !== '' || dateEnd !== '') ? `${dateStart || 'Inicio'} a ${dateEnd || 'Hoy'}` : nowMonthStr;
+  if (progressTextElem) progressTextElem.textContent = `${formatCurrency(monthTotalUser)} de ${formatCurrency(cap)} consumidos (${periodLabel})`;
   
   if (percentElem) percentElem.textContent = `${percent}%`;
   if (barElem) {
