@@ -15,7 +15,11 @@ let state = {
   currentTab: 'TODOS',
   selectedFileObject: null,
   selectedAprobacionId: null,
-  selectedEliminarId: null
+  selectedEliminarId: null,
+  isPrivileged: false,
+  adminEmails: ['conomun01@gmail.com', 'mau26.cristina@gmail.com', 'admin@acres.com', 'pablo@acres.com'],
+  monthlyCap: parseFloat(localStorage.getItem('acres_monthly_cap')) || 500.00,
+  selectedMonth: 'TODOS'
 };
 
 let autoSyncInterval = null;
@@ -105,6 +109,37 @@ function showDashboardView() {
   }
 
   document.getElementById('formSolicitante').value = state.currentUserEmail;
+
+  // CONTROL DE ROL Y MODO PRIVILEGIADO (ADMINISTRADOR VS USUARIO NORMAL)
+  const userEmail = (state.currentUserEmail || '').toLowerCase().trim();
+  const isAdminSaved = localStorage.getItem('acres_admin_override') === 'true';
+  const isAdminEmail = state.adminEmails.map(e => e.toLowerCase().trim()).includes(userEmail);
+  state.isPrivileged = isAdminEmail || isAdminSaved;
+
+  updateRoleUI();
+}
+
+function updateRoleUI() {
+  const badge = document.getElementById('userRoleBadge');
+  const btnEditCap = document.getElementById('btnEditCap');
+  
+  if (badge) {
+    if (state.isPrivileged) {
+      badge.textContent = '👑 Modo Administrador (Vista Completa)';
+      badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-300 dark:border-indigo-800';
+    } else {
+      badge.textContent = '👤 Modo Normal (Mis Registros)';
+      badge.className = 'text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-300 dark:border-emerald-800';
+    }
+  }
+
+  if (btnEditCap) {
+    if (state.isPrivileged) {
+      btnEditCap.classList.remove('hidden');
+    } else {
+      btnEditCap.classList.add('hidden');
+    }
+  }
 }
 
 function logoutApp() {
@@ -257,15 +292,68 @@ function setTabFilter(tabName) {
   applyFilters();
 }
 
+function populateMonthFilter() {
+  const monthSelect = document.getElementById('monthFilter');
+  if (!monthSelect) return;
+
+  const currentVal = monthSelect.value || 'TODOS';
+  const monthsSet = new Set();
+  
+  const nowStr = new Date().toISOString().slice(0, 7);
+  monthsSet.add(nowStr);
+
+  state.solicitudes.forEach(item => {
+    if (item.fecha && item.fecha.length >= 7) {
+      const mStr = item.fecha.slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(mStr)) {
+        monthsSet.add(mStr);
+      }
+    }
+  });
+
+  const sortedMonths = Array.from(monthsSet).sort().reverse();
+  
+  let html = `<option value="TODOS">Todos los Meses</option>`;
+  sortedMonths.forEach(m => {
+    const parts = m.split('-');
+    const year = parts[0];
+    const monthNum = parseInt(parts[1], 10);
+    const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+    const monthName = monthNames[monthNum - 1] || m;
+    html += `<option value="${m}">${monthName} ${year}</option>`;
+  });
+
+  monthSelect.innerHTML = html;
+  monthSelect.value = currentVal;
+}
+
 function applyFilters() {
+  populateMonthFilter();
+
   const searchText = (document.getElementById('searchInput').value || '').toLowerCase().trim();
   const selectedCategoria = document.getElementById('categoriaFilter').value;
+  const monthSelect = document.getElementById('monthFilter');
+  const selectedMonth = monthSelect ? monthSelect.value : 'TODOS';
+  
+  state.selectedMonth = selectedMonth;
 
   const filtered = state.solicitudes.filter(item => {
     const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
     const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
 
-    // VISTA PRINCIPAL: Oculta los ya Reembolsados para mantener pantalla limpia
+    // RESTRICCIÓN DE ROL: Si NO es administrador/privilegiado, SOLO VE SUS PROPIOS REGISTROS
+    if (!state.isPrivileged && itemSolicitanteClean !== currentEmailClean) {
+      return false;
+    }
+
+    // FILTRO MENSUALIZADO:
+    if (selectedMonth !== 'TODOS') {
+      if (!item.fecha || !item.fecha.startsWith(selectedMonth)) {
+        return false;
+      }
+    }
+
+    // PESTAÑAS
     if (state.currentTab === 'TODOS' && item.estado === 'Reembolsado') {
       return false;
     }
@@ -274,7 +362,6 @@ function applyFilters() {
       return false;
     }
 
-    // PESTAÑA HISTORIAL: Muestra los archivados pagados
     if (state.currentTab === 'Reembolsado' && item.estado !== 'Reembolsado') {
       return false;
     }
@@ -295,10 +382,12 @@ function applyFilters() {
   });
 
   renderDataView(filtered);
+  updateMonthlyCapUI();
 }
 
 function updateKPIs() {
   let totalMonto = 0;
+  let totalCount = 0;
   let pendientesMonto = 0;
   let pendientesCount = 0;
   let reembolsadosMonto = 0;
@@ -307,10 +396,26 @@ function updateKPIs() {
   let misCount = 0;
 
   const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
+  const selectedMonth = state.selectedMonth;
 
   state.solicitudes.forEach(item => {
+    const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
+
+    // Si el usuario no es admin, solo cuenta sus propios items en los KPIs
+    if (!state.isPrivileged && itemSolicitanteClean !== currentEmailClean) {
+      return;
+    }
+
+    // Aplicar filtro por mes a los KPIs si está seleccionado un mes
+    if (selectedMonth !== 'TODOS') {
+      if (!item.fecha || !item.fecha.startsWith(selectedMonth)) {
+        return;
+      }
+    }
+
     const monto = parseFloat(item.monto) || 0;
     totalMonto += monto;
+    totalCount++;
 
     if (item.estado === 'Pendiente') {
       pendientesMonto += monto;
@@ -320,7 +425,6 @@ function updateKPIs() {
       reembolsadosCount++;
     }
 
-    const itemSolicitanteClean = (item.solicitante || '').toLowerCase().trim();
     if (itemSolicitanteClean === currentEmailClean) {
       misMonto += monto;
       misCount++;
@@ -328,7 +432,7 @@ function updateKPIs() {
   });
 
   document.getElementById('kpiTotalMonto').textContent = formatCurrency(totalMonto);
-  document.getElementById('kpiTotalCount').textContent = `${state.solicitudes.length} registros`;
+  document.getElementById('kpiTotalCount').textContent = `${totalCount} registros`;
 
   document.getElementById('kpiPendientesMonto').textContent = formatCurrency(pendientesMonto);
   document.getElementById('kpiPendientesCount').textContent = `${pendientesCount} pendientes`;
@@ -338,6 +442,90 @@ function updateKPIs() {
 
   document.getElementById('kpiMisSolicitudesMonto').textContent = formatCurrency(misMonto);
   document.getElementById('kpiMisSolicitudesCount').textContent = `${misCount} registradas mías`;
+}
+
+function updateMonthlyCapUI() {
+  const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
+  const nowMonthStr = new Date().toISOString().slice(0, 7);
+  const targetMonth = state.selectedMonth !== 'TODOS' ? state.selectedMonth : nowMonthStr;
+
+  let monthTotalUser = 0;
+  state.solicitudes.forEach(item => {
+    const itemEmailClean = (item.solicitante || '').toLowerCase().trim();
+    if (itemEmailClean === currentEmailClean && item.fecha && item.fecha.startsWith(targetMonth)) {
+      monthTotalUser += (parseFloat(item.monto) || 0);
+    }
+  });
+
+  const cap = state.monthlyCap;
+  const percent = Math.min(100, Math.round((monthTotalUser / cap) * 100));
+
+  const displayCapElem = document.getElementById('monthlyCapDisplay');
+  const progressTextElem = document.getElementById('monthlyCapProgressText');
+  const percentElem = document.getElementById('monthlyCapPercent');
+  const barElem = document.getElementById('monthlyCapProgressBar');
+
+  if (displayCapElem) displayCapElem.textContent = formatCurrency(cap);
+  if (progressTextElem) progressTextElem.textContent = `${formatCurrency(monthTotalUser)} de ${formatCurrency(cap)} consumidos este mes (${targetMonth})`;
+  
+  if (percentElem) percentElem.textContent = `${percent}%`;
+  if (barElem) {
+    barElem.style.width = `${percent}%`;
+    if (percent >= 95) {
+      barElem.className = 'bg-rose-500 h-full rounded-full transition-all duration-500';
+      if (percentElem) percentElem.className = 'font-mono text-rose-500 font-bold';
+    } else if (percent >= 75) {
+      barElem.className = 'bg-amber-500 h-full rounded-full transition-all duration-500';
+      if (percentElem) percentElem.className = 'font-mono text-amber-500 font-bold';
+    } else {
+      barElem.className = 'bg-emerald-500 h-full rounded-full transition-all duration-500';
+      if (percentElem) percentElem.className = 'font-mono text-emerald-500 font-bold';
+    }
+  }
+}
+
+function toggleAdminModePrompt() {
+  if (state.isPrivileged) {
+    state.isPrivileged = false;
+    localStorage.removeItem('acres_admin_override');
+    showToast('Modo Administrador desactivado. Ahora ves únicamente tus propios registros.', 'info');
+  } else {
+    const secret = prompt("Ingresa la clave de Administrador o tu correo autorizado (ej. admin@acres.com):");
+    if (!secret) return;
+
+    const cleanSec = secret.toLowerCase().trim();
+    if (cleanSec === 'acres2026' || cleanSec === 'admin' || state.adminEmails.includes(cleanSec) || cleanSec === state.currentUserEmail) {
+      state.isPrivileged = true;
+      localStorage.setItem('acres_admin_override', 'true');
+      showToast('👑 ¡Modo Administrador activado con éxito!', 'success');
+    } else {
+      showToast('Correo o clave de administrador no válidos.', 'error');
+    }
+  }
+  updateRoleUI();
+  updateKPIs();
+  applyFilters();
+}
+
+function promptEditMonthlyCap() {
+  if (!state.isPrivileged) {
+    showToast('Solo los administradores pueden modificar el tope mensual.', 'warning');
+    return;
+  }
+
+  const currentCap = state.monthlyCap;
+  const input = prompt(`Configurar Tope Mensual de Reembolsos por Persona (S/.):`, currentCap);
+  if (input !== null) {
+    const newCap = parseFloat(input);
+    if (!isNaN(newCap) && newCap > 0) {
+      state.monthlyCap = newCap;
+      localStorage.setItem('acres_monthly_cap', newCap.toString());
+      showToast(`Tope mensual actualizado a: ${formatCurrency(newCap)}`, 'success');
+      updateMonthlyCapUI();
+    } else {
+      showToast('Por favor ingresa un monto válido.', 'error');
+    }
+  }
 }
 
 /* ==========================================
@@ -1315,33 +1503,66 @@ function generateUniqueId() {
 function handleSaveSolicitud(e) {
   e.preventDefault();
 
-  const btnSave = document.getElementById('btnSaveSolicitud');
-  btnSave.disabled = true;
-  btnSave.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Guardando...`;
-  lucide.createIcons();
+  const validadoPorInput = (document.getElementById('formValidadoPor').value || '').trim();
+  if (!validadoPorInput) {
+    showToast('⚠️ El campo "Validado por (Jefe o Encargado)" es OBLIGATORIO.', 'error');
+    document.getElementById('formValidadoPor').focus();
+    return;
+  }
+
+  const categoria = document.getElementById('formCategoria').value;
+  let detalle = (document.getElementById('formDetalle').value || '').trim();
+  if (!detalle) {
+    detalle = `Gasto de ${categoria}`;
+  }
+
+  const monto = parseFloat(document.getElementById('formMonto').value) || 0.00;
+  const fecha = document.getElementById('formFecha').value || new Date().toISOString().split('T')[0];
+  const monthStr = fecha.slice(0, 7);
+  const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
+
+  // VERIFICAR TOPE MENSUAL DE REEMBOLSOS
+  let userCurrentMonthSum = 0;
+  state.solicitudes.forEach(s => {
+    if ((s.solicitante || '').toLowerCase().trim() === currentEmailClean && s.fecha && s.fecha.startsWith(monthStr)) {
+      userCurrentMonthSum += (parseFloat(s.monto) || 0);
+    }
+  });
 
   const existingId = document.getElementById('formId').value;
   const recordId = (existingId && existingId.trim() !== '') ? existingId.trim() : generateUniqueId();
 
-  const currentEmailClean = (state.currentUserEmail || '').toLowerCase().trim();
+  // Descontar la versión previa si se está editando la misma solicitud
+  const existingItem = state.solicitudes.find(s => s.id === recordId);
+  if (existingItem && existingItem.fecha && existingItem.fecha.startsWith(monthStr)) {
+    userCurrentMonthSum -= (parseFloat(existingItem.monto) || 0);
+  }
+
+  const totalConNueva = userCurrentMonthSum + monto;
+  if (totalConNueva > state.monthlyCap) {
+    showToast(`⚠️ ALERTA DE TOPE: Con esta solicitud (S/. ${monto.toFixed(2)}) acumulas S/. ${totalConNueva.toFixed(2)} en ${monthStr}, superando tu tope mensual asignado de S/. ${state.monthlyCap.toFixed(2)}.`, 'warning');
+  }
+
+  const btnSave = document.getElementById('btnSaveSolicitud');
+  btnSave.disabled = true;
+  btnSave.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Guardando...`;
+  lucide.createIcons();
 
   const sustentoNombre = state.selectedFileObject 
     ? state.selectedFileObject.fileName 
     : (document.getElementById('formSustentoNombre').value || '');
 
   const sustentoBase64 = state.selectedFileObject ? state.selectedFileObject.base64Data : '';
-
-  const existingItem = state.solicitudes.find(s => s.id === recordId);
   const estadoPrevio = existingItem ? existingItem.estado : 'Pendiente';
 
   const newRecord = {
     id: recordId,
-    fecha: document.getElementById('formFecha').value,
+    fecha: fecha,
     solicitante: currentEmailClean,
-    categoria: document.getElementById('formCategoria').value,
-    monto: parseFloat(document.getElementById('formMonto').value) || 0.00,
-    detalle: document.getElementById('formDetalle').value,
-    validadoPor: document.getElementById('formValidadoPor').value || '',
+    categoria: categoria,
+    monto: monto,
+    detalle: detalle,
+    validadoPor: validadoPorInput,
     sustentoUrl: document.getElementById('formSustentoUrl').value || sustentoBase64 || '',
     sustentoNombre: sustentoNombre,
     sustentoBase64: sustentoBase64,

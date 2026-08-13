@@ -139,10 +139,17 @@
             </button>
 
             <!-- DESPLEGABLE CLICK-BASED FIJO -->
-            <div id="userDropdownMenu" class="absolute right-0 mt-1 w-52 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 py-1.5 hidden z-50 animate-fade-in">
+            <div id="userDropdownMenu" class="absolute right-0 mt-1 w-56 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 py-1.5 hidden z-50 animate-fade-in">
               <div class="px-3.5 py-2 border-b border-slate-100 dark:border-slate-800 sm:hidden">
                 <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate" id="mobileUserEmailDisplay">usuario@acres.com</p>
               </div>
+              <button onclick="toggleAdminModePrompt()" class="w-full text-left px-3.5 py-2.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between transition-colors border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="shield" class="w-4 h-4 text-indigo-500"></i>
+                  <span>Modo Administrador</span>
+                </div>
+                <span id="adminToggleBadge" class="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">Cambiar</span>
+              </button>
               <button onclick="logoutApp()" class="w-full text-left px-3.5 py-2.5 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-2.5 transition-colors">
                 <i data-lucide="log-out" class="w-4 h-4 text-rose-500"></i>
                 <span>Cerrar Sesión</span>
@@ -231,6 +238,9 @@
           </div>
 
           <div class="flex items-center gap-3">
+            <select id="monthFilter" onchange="applyFilters()" class="w-full md:w-auto px-3.5 py-2 rounded-xl text-sm bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-acres-500/50">
+              <option value="TODOS">Todos los Meses</option>
+            </select>
             <select id="categoriaFilter" onchange="applyFilters()" class="w-full md:w-auto px-3.5 py-2 rounded-xl text-sm bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-acres-500/50">
               <option value="TODAS">Todas las Categorías</option>
               <option value="Movilidad">Movilidad</option>
@@ -249,15 +259,55 @@
             <button onclick="setTabFilter('MIS_SOLICITUDES')" id="tab-MIS_SOLICITUDES" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all">
               Mis Solicitudes
             </button>
-            <button onclick="setTabFilter('Reembolsado')" id="tab-Reembolsado" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all flex items-center gap-1">
-              <i data-lucide="archive" class="w-3.5 h-3.5"></i>
-              <span>Historial (Reembolsados)</span>
+            <button onclick="setTabFilter('Reembolsado')" id="tab-Reembolsado" class="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all">
+              Historial (Reembolsados)
             </button>
           </div>
 
-          <span class="text-xs text-slate-500 dark:text-slate-400 hidden sm:inline-block" id="recordsCounterDisplay">
+          <span class="text-xs text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap ml-4" id="recordsCounterDisplay">
             Mostrando 0 solicitudes
           </span>
+        </div>
+      </section>
+
+      <!-- CONTROL DE TOPE MENSUAL POR PERSONA -->
+      <section class="glass-card rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-shrink-0">
+              <i data-lucide="gauge" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>Control de Tope Mensual por Persona</span>
+                <span id="userRoleBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-300 dark:border-emerald-800">
+                  👤 Modo Normal
+                </span>
+              </h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400" id="monthlyCapSubtitle">
+                Consumo acumulado de tu cuenta este mes vs. tu límite asignado.
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 text-xs font-bold self-end sm:self-center">
+            <span class="text-slate-600 dark:text-slate-400">Tope Permitido:</span>
+            <span class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-mono" id="monthlyCapDisplay">S/. 500.00</span>
+            <button onclick="promptEditMonthlyCap()" id="btnEditCap" class="p-1.5 rounded-lg text-slate-400 hover:text-acres-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all hidden" title="Configurar Tope Mensual">
+              <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- BARRA DE PROGRESO DE CONSUMO MENSUAL -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between text-xs font-semibold">
+            <span id="monthlyCapProgressText" class="text-slate-700 dark:text-slate-300">S/. 0.00 de S/. 500.00 consumidos este mes</span>
+            <span id="monthlyCapPercent" class="font-mono text-acres-500 font-bold">0%</span>
+          </div>
+          <div class="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-3 overflow-hidden p-0.5">
+            <div id="monthlyCapProgressBar" class="bg-emerald-500 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+          </div>
         </div>
       </section>
 
@@ -370,17 +420,17 @@
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Detalle / Concepto del Gasto</label>
-          <textarea id="formDetalle" rows="2" required placeholder="Describe brevemente el motivo del gasto..." class="w-full px-3 py-2 text-sm rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-acres-500 focus:outline-none"></textarea>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Detalle / Concepto del Gasto <span class="text-slate-400 font-normal">(Opcional)</span></label>
+          <textarea id="formDetalle" rows="2" placeholder="Describe brevemente el motivo del gasto (Opcional)..." class="w-full px-3 py-2 text-sm rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-acres-500 focus:outline-none"></textarea>
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Validado por (Jefe o Encargado)</label>
-          <input type="text" id="formValidadoPor" placeholder="Ej: Pablo o Ing. Carlos Pérez" class="w-full px-3 py-2 text-sm rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-acres-500 focus:outline-none">
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Validado por (Jefe o Encargado) <span class="text-rose-500 font-bold">* (Obligatorio)</span></label>
+          <input type="text" id="formValidadoPor" required placeholder="Ej: Pablo o Ing. Carlos Pérez" class="w-full px-3 py-2 text-sm rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-acres-500 focus:outline-none">
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Comprobante / Foto (Escáner Automático IA)</label>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Comprobante / Foto (Sustento del gasto)</label>
           <div id="dropZone" class="file-drop-zone border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:border-acres-500 dark:hover:border-acres-400 bg-slate-50/50 dark:bg-slate-900/50">
             <input type="file" id="fileInput" accept="image/*,application/pdf" capture="environment" onchange="handleFileSelect(event)" class="hidden">
             
@@ -389,7 +439,7 @@
                 <i data-lucide="camera" class="w-5 h-5"></i>
               </div>
               <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Tomar Foto o Seleccionar Archivo</p>
-              <p class="text-[11px] text-slate-400">✨ Lectura Automática OCR: Rellena el monto y concepto solo con la foto</p>
+              <p class="text-[11px] text-slate-400">📎 Adjuntar Foto de Comprobante / Voucher de Sustento</p>
             </div>
             
             <!-- TARJETA CON VISTA PREVIA VISUAL DE IMAGEN O PDF -->
