@@ -1,7 +1,7 @@
 /**
  * ==============================================================================
  * ACRES REEMBOLSOS - LÓGICA FRONTEND (Vercel & GitHub Version)
- * Escáner OCR Avanzado con Pre-procesamiento de Contraste y Parser SUNAT Perú
+ * Escáner IA Gemini Vision vía Apps Script (key segura en servidor)
  * ==============================================================================
  */
 
@@ -495,27 +495,90 @@ function runReceiptOCRScan(rawBase64) {
 
   if (ocrBadge) {
     ocrBadge.classList.remove('hidden');
-    ocrTextStatus.textContent = '🔍 Analizando comprobante con Google...';
+    ocrTextStatus.textContent = '🤖 Analizando comprobante con Gemini IA...';
     if (ocrIcon) ocrIcon.className = 'w-4 h-4 text-sky-500 animate-spin flex-shrink-0';
   }
 
-  // Comprimir a imagen PEQUEÑA para OCR (no necesitamos alta resolución para leer texto)
-  // 600px ancho, escala de grises, calidad 0.5 → ~25KB, ideal para enviar al servidor
+  // Comprimir imagen antes de enviar al servidor (~100KB máximo)
   compressForOCR(rawBase64).then(smallBase64 => {
-    // ESTRATEGIA A: Google Drive OCR vía Apps Script (calidad Google Lens)
-    sendToGoogleDriveOCR(smallBase64)
-      .then(text => {
-        if (text && text.trim().length > 15) {
-          parseAndAutoFillForm(text, 'Google Drive OCR');
-        } else {
-          // ESTRATEGIA B: Tesseract local con múltiples pasadas
-          runTesseractMultiPass(smallBase64, rawBase64);
-        }
-      })
-      .catch(() => {
+    // El Apps Script gestiona todo: Gemini → Drive OCR → texto
+    // La API Key de Gemini está guardada SOLO en el servidor (segura)
+    Promise.race([
+      fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'ocrImage', imageBase64: smallBase64 })
+      }).then(r => r.json()),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 25000))
+    ])
+    .then(data => {
+      if (!data || data.status === 'error') {
+        // El servidor falló → usar Tesseract local como último recurso
         runTesseractMultiPass(smallBase64, rawBase64);
-      });
+        return;
+      }
+
+      // El servidor puede devolver resultado de Gemini (JSON estructurado)
+      // o texto plano de Drive OCR
+      if (data.method === 'gemini' && data.result) {
+        // Resultado de Gemini: JSON con monto, fecha, empresa, categoria
+        fillFormFromGeminiResult(data.result);
+      } else if (data.text && data.text.trim().length > 10) {
+        // Texto plano de Drive OCR: parsear con regex
+        parseAndAutoFillForm(data.text, 'Drive OCR');
+      } else {
+        runTesseractMultiPass(smallBase64, rawBase64);
+      }
+    })
+    .catch(() => {
+      // Sin conexión o timeout → Tesseract local
+      runTesseractMultiPass(smallBase64, rawBase64);
+    });
   });
+}
+
+// Llena el formulario directamente con el resultado estructurado de Gemini
+function fillFormFromGeminiResult(result) {
+  const ocrBadge = document.getElementById('ocrStatusBadge');
+  const ocrTextStatus = document.getElementById('ocrTextStatus');
+  const ocrIcon = document.getElementById('ocrIcon');
+
+  if (result.monto && parseFloat(result.monto) > 0) {
+    document.getElementById('formMonto').value = parseFloat(result.monto).toFixed(2);
+  }
+
+  if (result.fecha && result.fecha !== 'null' && result.fecha !== null) {
+    try {
+      const isISO = /^\d{4}-\d{2}-\d{2}/.test(result.fecha);
+      if (isISO) {
+        document.getElementById('formFecha').value = result.fecha.slice(0, 10);
+      } else {
+        const parts = result.fecha.match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+        if (parts) {
+          const y = parts[3].length === 2 ? '20' + parts[3] : parts[3];
+          document.getElementById('formFecha').value = `${y}-${parts[2].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
+        }
+      }
+    } catch(e) {}
+  }
+
+  const validCats = ['Movilidad', 'Alimentación', 'Útiles', 'Otros'];
+  if (result.categoria && validCats.includes(result.categoria)) {
+    document.getElementById('formCategoria').value = result.categoria;
+  }
+
+  const detalleField = document.getElementById('formDetalle');
+  const autoDetalle = result.detalle || result.empresa || '';
+  if (autoDetalle && (!detalleField.value || detalleField.value.trim() === '')) {
+    detalleField.value = autoDetalle.slice(0, 80);
+  }
+
+  const montoDisplay = result.monto ? `S/. ${parseFloat(result.monto).toFixed(2)}` : '---';
+  if (ocrBadge && ocrTextStatus) {
+    if (ocrIcon) ocrIcon.className = 'w-4 h-4 text-emerald-500 flex-shrink-0';
+    ocrTextStatus.textContent = `✅ Gemini IA: ${montoDisplay} • ${result.empresa || ''} • ${result.categoria || 'Otros'}`;
+  }
+  showToast(`✅ Gemini IA: Total ${montoDisplay} — ${result.empresa || ''}`, 'success');
 }
 
 // Comprime imagen a versión pequeña en escala de grises optimizada para OCR
