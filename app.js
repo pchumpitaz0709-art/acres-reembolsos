@@ -253,39 +253,46 @@ function fetchSolicitudesFromAPI(showSpinner = true) {
       showLoading(false);
       if (syncBtnIcon) syncBtnIcon.classList.remove('animate-spin');
 
-      if (response && Array.isArray(response.solicitudes)) {
-        const remoteList = response.solicitudes;
-        const currentList = state.solicitudes;
+      if (response) {
+        if (response.monthlyCap) {
+          state.monthlyCap = parseFloat(response.monthlyCap) || 500.00;
+          localStorage.setItem('acres_monthly_cap', state.monthlyCap.toString());
+        }
 
-        const mergedMap = new Map();
+        if (Array.isArray(response.solicitudes)) {
+          const remoteList = response.solicitudes;
+          const currentList = state.solicitudes;
 
-        remoteList.forEach(item => {
-          if (item && item.id) mergedMap.set(item.id, item);
-        });
+          const mergedMap = new Map();
 
-        currentList.forEach(item => {
-          if (item && item.id) {
-            const isRecentlyModified = item._lastModifiedLocally && (Date.now() - item._lastModifiedLocally < 10000);
+          remoteList.forEach(item => {
+            if (item && item.id) mergedMap.set(item.id, item);
+          });
 
-            if (!mergedMap.has(item.id)) {
-              mergedMap.set(item.id, item);
-            } else if (isRecentlyModified) {
-              const remoteItem = mergedMap.get(item.id);
-              remoteItem.estado = item.estado;
-              remoteItem.validadoPor = item.validadoPor;
-              remoteItem._lastModifiedLocally = item._lastModifiedLocally;
-              if (item.sustentoBase64 && !remoteItem.sustentoUrl) {
-                remoteItem.sustentoBase64 = item.sustentoBase64;
+          currentList.forEach(item => {
+            if (item && item.id) {
+              const isRecentlyModified = item._lastModifiedLocally && (Date.now() - item._lastModifiedLocally < 10000);
+
+              if (!mergedMap.has(item.id)) {
+                mergedMap.set(item.id, item);
+              } else if (isRecentlyModified) {
+                const remoteItem = mergedMap.get(item.id);
+                remoteItem.estado = item.estado;
+                remoteItem.validadoPor = item.validadoPor;
+                remoteItem._lastModifiedLocally = item._lastModifiedLocally;
+                if (item.sustentoBase64 && !remoteItem.sustentoUrl) {
+                  remoteItem.sustentoBase64 = item.sustentoBase64;
+                }
               }
             }
-          }
-        });
+          });
 
-        const mergedArray = Array.from(mergedMap.values());
-        state.solicitudes = mergedArray;
-        localStorage.setItem('acres_cached_solicitudes', JSON.stringify(mergedArray));
-        updateKPIs();
-        applyFilters();
+          const mergedArray = Array.from(mergedMap.values());
+          state.solicitudes = mergedArray;
+          localStorage.setItem('acres_cached_solicitudes', JSON.stringify(mergedArray));
+          updateKPIs();
+          applyFilters();
+        }
       }
     })
     .catch(err => {
@@ -541,6 +548,16 @@ function promptEditMonthlyCap() {
       localStorage.setItem('acres_monthly_cap', newCap.toString());
       showToast(`Tope mensual actualizado a: ${formatCurrency(newCap)}`, 'success');
       updateMonthlyCapUI();
+
+      // PUBLICAR EL NUEVO TOPE GLOBAL EN GOOGLE APPS SCRIPT PARA TODOS LOS DISPOSITIVOS Y USUARIOS
+      fetch(API_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        body: JSON.stringify({
+          action: 'updateMonthlyCap',
+          monthlyCap: newCap
+        })
+      });
     } else {
       showToast('Por favor ingresa un monto válido.', 'error');
     }
