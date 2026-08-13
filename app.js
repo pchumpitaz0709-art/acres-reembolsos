@@ -581,35 +581,22 @@ function fillFormFromGeminiResult(result) {
   showToast(`✅ Gemini IA: Total ${montoDisplay} — ${result.empresa || ''}`, 'success');
 }
 
-// Comprime imagen a versión pequeña en escala de grises optimizada para OCR
+// Comprime la foto manteniendo los colores y nitidez natural (ideal para Vision AI / Google Lens)
 function compressForOCR(base64Image) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = function() {
       const canvas = document.createElement('canvas');
-      const MAX_W = 900; // 900px es suficiente para que Tesseract/Drive lean texto
+      const MAX_W = 1400; // 1400px conserva nitidez perfecta para letras pequeñas
       let w = img.width;
       let h = img.height;
       if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext('2d');
-
-      // Aplicar filtro de mejora de contraste antes de dibujar
-      ctx.filter = 'contrast(1.4) brightness(1.1) saturate(0)';
       ctx.drawImage(img, 0, 0, w, h);
-
-      // Convertir a escala de grises con binarización suave
-      const imgData = ctx.getImageData(0, 0, w, h);
-      const d = imgData.data;
-      for (let i = 0; i < d.length; i += 4) {
-        const lum = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
-        // Binarización suave: texto oscuro se pone negro, fondo claro se pone blanco
-        const v = lum < 160 ? Math.max(0, lum - 30) : Math.min(255, lum + 20);
-        d[i] = d[i+1] = d[i+2] = v;
-      }
-      ctx.putImageData(imgData, 0, 0);
-      resolve(canvas.toDataURL('image/jpeg', 0.55));
+      // Guardar en JPEG limpio calidad 0.82 (~100KB), sin filtros que distorsionen el texto
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
     };
     img.onerror = () => resolve(base64Image);
     img.src = base64Image;
