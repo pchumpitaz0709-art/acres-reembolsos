@@ -502,7 +502,7 @@ function runReceiptOCRScan(rawBase64) {
   // Comprimir imagen antes de enviar al servidor (~100KB máximo)
   compressForOCR(rawBase64).then(smallBase64 => {
     Promise.race([
-      fetch(API_URL, {
+      fetch(API_URL + '?action=ocrImage', {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action: 'ocrImage', imageBase64: smallBase64 })
@@ -513,13 +513,11 @@ function runReceiptOCRScan(rawBase64) {
       console.log('Respuesta OCR del servidor:', data);
       
       if (!data) {
-        alert("🚨 ERROR: El servidor no devolvió datos.");
         runTesseractMultiPass(smallBase64, rawBase64);
         return;
       }
       
       if (data.status === 'error') {
-        alert("🚨 ERROR DEL SERVIDOR APPS SCRIPT:\n\n" + (data.message || JSON.stringify(data)));
         runTesseractMultiPass(smallBase64, rawBase64);
         return;
       }
@@ -529,13 +527,11 @@ function runReceiptOCRScan(rawBase64) {
       } else if (data.text && data.text.trim().length > 10) {
         parseAndAutoFillForm(data.text, 'Drive OCR');
       } else {
-        alert("🚨 ERROR: Respuesta desconocida del servidor.\n\n" + JSON.stringify(data));
         runTesseractMultiPass(smallBase64, rawBase64);
       }
     })
     .catch(err => {
       console.error('Error al llamar al backend OCR:', err);
-      alert("🚨 ERROR DE CONEXIÓN VERCEL ↔ APPS SCRIPT:\n\n" + err.toString() + "\n\nEsto significa que Google está bloqueando la petición, o el Apps Script no es público ('Cualquier persona').");
       runTesseractMultiPass(smallBase64, rawBase64);
     });
   });
