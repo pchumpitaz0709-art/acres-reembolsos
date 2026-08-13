@@ -489,52 +489,9 @@ function renderDataView(items) {
    ========================================== */
 
 function runReceiptOCRScan(rawBase64) {
+  // Escáner automático desactivado a solicitud del usuario. Llenado manual limpio.
   const ocrBadge = document.getElementById('ocrStatusBadge');
-  const ocrTextStatus = document.getElementById('ocrTextStatus');
-  const ocrIcon = document.getElementById('ocrIcon');
-
-  if (ocrBadge) {
-    ocrBadge.classList.remove('hidden');
-    ocrTextStatus.textContent = '🤖 Analizando comprobante con Gemini IA...';
-    if (ocrIcon) ocrIcon.className = 'w-4 h-4 text-sky-500 animate-spin flex-shrink-0';
-  }
-
-  // Comprimir imagen antes de enviar al servidor (~100KB máximo)
-  compressForOCR(rawBase64).then(smallBase64 => {
-    Promise.race([
-      fetch(API_URL + '?action=ocrImage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'ocrImage', imageBase64: smallBase64 })
-      }).then(r => r.json()),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('TIMEOUT_30S')), 30000))
-    ])
-    .then(data => {
-      console.log('Respuesta OCR del servidor:', data);
-      
-      if (!data) {
-        runTesseractMultiPass(smallBase64, rawBase64);
-        return;
-      }
-      
-      if (data.status === 'error') {
-        runTesseractMultiPass(smallBase64, rawBase64);
-        return;
-      }
-
-      if (data.method === 'gemini' && data.result) {
-        fillFormFromGeminiResult(data.result);
-      } else if (data.text && data.text.trim().length > 10) {
-        parseAndAutoFillForm(data.text, 'Drive OCR');
-      } else {
-        runTesseractMultiPass(smallBase64, rawBase64);
-      }
-    })
-    .catch(err => {
-      console.error('Error al llamar al backend OCR:', err);
-      runTesseractMultiPass(smallBase64, rawBase64);
-    });
-  });
+  if (ocrBadge) ocrBadge.classList.add('hidden');
 }
 
 // Llena el formulario directamente con el resultado estructurado de Gemini
@@ -1249,9 +1206,8 @@ function handleFileSelect(event) {
         mimeType: 'image/jpeg',
         base64Data: compressedBase64
       };
-      showFilePreviewUI(newFileName + ' (Optimizado)', compressedBase64);
-      // DISPARAR ESCÁNER IA DE COMPROBANTE CON PRE-PROCESADOR DE CONTRASITE
-      runReceiptOCRScan(compressedBase64);
+      showFilePreviewUI(newFileName + ' (Adjuntado)', compressedBase64);
+      // Adjuntado limpio sin escáner automático
     });
   } else {
     if (file.size > 10 * 1024 * 1024) {
