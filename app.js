@@ -501,37 +501,31 @@ function runReceiptOCRScan(rawBase64) {
 
   // Comprimir imagen antes de enviar al servidor (~100KB máximo)
   compressForOCR(rawBase64).then(smallBase64 => {
-    // El Apps Script gestiona todo: Gemini → Drive OCR → texto
-    // La API Key de Gemini está guardada SOLO en el servidor (segura)
     Promise.race([
       fetch(API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action: 'ocrImage', imageBase64: smallBase64 })
       }).then(r => r.json()),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 25000))
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 30000))
     ])
     .then(data => {
+      console.log('Respuesta OCR del servidor:', data);
       if (!data || data.status === 'error') {
-        // El servidor falló → usar Tesseract local como último recurso
         runTesseractMultiPass(smallBase64, rawBase64);
         return;
       }
 
-      // El servidor puede devolver resultado de Gemini (JSON estructurado)
-      // o texto plano de Drive OCR
       if (data.method === 'gemini' && data.result) {
-        // Resultado de Gemini: JSON con monto, fecha, empresa, categoria
         fillFormFromGeminiResult(data.result);
       } else if (data.text && data.text.trim().length > 10) {
-        // Texto plano de Drive OCR: parsear con regex
         parseAndAutoFillForm(data.text, 'Drive OCR');
       } else {
         runTesseractMultiPass(smallBase64, rawBase64);
       }
     })
-    .catch(() => {
-      // Sin conexión o timeout → Tesseract local
+    .catch(err => {
+      console.error('Error al llamar al backend OCR:', err);
       runTesseractMultiPass(smallBase64, rawBase64);
     });
   });
@@ -549,15 +543,14 @@ function fillFormFromGeminiResult(result) {
 
   if (result.fecha && result.fecha !== 'null' && result.fecha !== null) {
     try {
-      const isISO = /^\d{4}-\d{2}-\d{2}/.test(result.fecha);
-      if (isISO) {
-        document.getElementById('formFecha').value = result.fecha.slice(0, 10);
-      } else {
-        const parts = result.fecha.match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
-        if (parts) {
-          const y = parts[3].length === 2 ? '20' + parts[3] : parts[3];
-          document.getElementById('formFecha').value = `${y}-${parts[2].padStart(2,'0')}-${parts[1].padStart(2,'0')}`;
-        }
+      const fStr = String(result.fecha).trim();
+      const mIso = fStr.match(/(\d{4})[\/.-](\d{1,2})[\/.-](\d{1,2})/);
+      const mDmy = fStr.match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+      if (mIso) {
+        document.getElementById('formFecha').value = `${mIso[1]}-${mIso[2].padStart(2,'0')}-${mIso[3].padStart(2,'0')}`;
+      } else if (mDmy) {
+        const y = mDmy[3].length === 2 ? '20' + mDmy[3] : mDmy[3];
+        document.getElementById('formFecha').value = `${y}-${mDmy[2].padStart(2,'0')}-${mDmy[1].padStart(2,'0')}`;
       }
     } catch(e) {}
   }
@@ -917,16 +910,26 @@ function parseAndAutoFillForm(ocrText, method) {
 
   if (extractedFecha) {
     try {
-      const sep = extractedFecha.match(/[\/\.-]/)[0];
-      const parts = extractedFecha.split(sep);
+      const dateClean = extractedFecha.trim();
+      const sep = dateClean.match(/[\/\.-]/)[0];
+      const parts = dateClean.split(sep);
       if (parts.length === 3) {
-        let day = parts[0].padStart(2, '0');
-        let month = parts[1].padStart(2, '0');
-        let year = parts[2].length === 2 ? '20' + parts[2] : parts[2];
-        // Validar que sea una fecha coherente
-        if (parseInt(month) >= 1 && parseInt(month) <= 12 &&
-            parseInt(day) >= 1 && parseInt(day) <= 31 &&
-            parseInt(year) >= 2010 && parseInt(year) <= 2035) {
+        let day, month, year;
+        if (parts[0].length === 4) {
+          // Formato YYYY-MM-DD o YYYY/MM/DD
+          year = parts[0];
+          month = parts[1].padStart(2, '0');
+          day = parts[2].padStart(2, '0');
+        } else {
+          // Formato DD-MM-YYYY o DD/MM/YY
+          day = parts[0].padStart(2, '0');
+          month = parts[1].padStart(2, '0');
+          year = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+        }
+        const mInt = parseInt(month, 10);
+        const dInt = parseInt(day, 10);
+        const yInt = parseInt(year, 10);
+        if (mInt >= 1 && mInt <= 12 && dInt >= 1 && dInt <= 31 && yInt >= 2010 && yInt <= 2035) {
           document.getElementById('formFecha').value = `${year}-${month}-${day}`;
         }
       }
